@@ -1,0 +1,16 @@
+{
+  "name": "koe-calendar",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Koe（コエ）のiOSアプリ版を作るための設定",
+  "scripts": {
+    "ios": "sh scripts/build-ios.sh"
+  },
+  "dependencies": {
+    "@capacitor/core": "8.5.3",
+    "@capacitor/ios": "8.5.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3"
+  }
+}

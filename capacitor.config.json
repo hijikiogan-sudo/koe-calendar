@@ -1,0 +1,11 @@
+{
+  "appId": "jp.hijikiogan.koe",
+  "appName": "Koe",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#3b2616",
+    "scrollEnabled": false,
+    "allowsLinkPreview": false
+  }
+}
