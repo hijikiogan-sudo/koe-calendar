@@ -25,6 +25,9 @@
       // 単位の前の漢数字だけを数字にする（「一郎」「三河」などの名前は変えない）
       .replace(/[〇零一二三四五六七八九十百]+(?=\s*(?:年|月|日|時|分|階|号|番|週|件|回|名|人|F))/g, kanjiToNum)
       .replace(/(\d)\s*時\s*半/g, '$1時30分')
+      // 時間帯の言葉を日付＋時間帯に分ける
+      .replace(/今夜|今晩/g, '今日の夜 ').replace(/今朝/g, '今日の朝 ').replace(/明晩/g, '明日の夜 ').replace(/明朝/g, '明日の朝 ')
+      .replace(/正午/g, '12時')
       // 音声の聞き違い：「3階」→「3回」。後ろに部屋や建物の言葉が続くとき、または「〇館」の直後なら「階」に直す
       .replace(/(\d+)\s*回(?=\s*(?:大|小|中|第)?(?:講堂|会議室|ホール|ロビー|ラウンジ|フロア|病棟|診察室|教室|研修室|応接室|事務室|[^\s、,。]{0,6}室))/g, '$1階')
       .replace(/((?:[新本別旧東西南北中]|\d+号)(?:館|刊|間|感|管|缶|巻))\s*(\d+)\s*回/g, '$1$2階')
@@ -121,6 +124,22 @@
       const week = { 今週: 0, 来週: 7, 再来週: 14 }[m[1]];
       return addDays(sunday, week + WD.indexOf(m[2]));
     }
+    // 「今週末」「来週」「月末」など。「年末調整」のような言葉は日付にしない
+    const B = '(?=$|[\\s、,，。]|に|の|まで|は|で|から)';
+    if ((m = take(st, new RegExp(`(今週|来週|再来週)(末|中)${B}`)))) {
+      return addDays(addDays(today, -today.getDay()), { 今週: 0, 来週: 7, 再来週: 14 }[m[1]] + 6);
+    }
+    if ((m = take(st, new RegExp(`週末${B}`)))) return addDays(today, 6 - today.getDay());
+    if ((m = take(st, new RegExp(`(来週|再来週)${B}`)))) {
+      return addDays(addDays(today, -today.getDay()), (m[1] === '来週' ? 7 : 14) + 1); // その週の月曜
+    }
+    if ((m = take(st, new RegExp(`(今月|来月|再来月)(末|頭|初め|始め)${B}`)))) {
+      const off = { 今月: 0, 来月: 1, 再来月: 2 }[m[1]];
+      return m[2] === '末' ? new Date(today.getFullYear(), today.getMonth() + off + 1, 0) : new Date(today.getFullYear(), today.getMonth() + off, 1);
+    }
+    if ((m = take(st, new RegExp(`月末${B}`)))) return new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    if ((m = take(st, new RegExp(`(来月|再来月)${B}`)))) return new Date(today.getFullYear(), today.getMonth() + (m[1] === '来月' ? 1 : 2), 1);
+    if ((m = take(st, new RegExp(`年末${B}`)))) return new Date(today.getFullYear(), 11, 31);
     if ((m = take(st, new RegExp(`(?:次の|今度の)?([${WD}])曜日?`)))) {
       const diff = (WD.indexOf(m[1]) - today.getDay() + 7) % 7;
       return addDays(today, diff);
@@ -137,10 +156,84 @@
     return null;
   }
 
+  // その日がある一番近い日（今日以降）
+  function nearestDay(n, today) {
+    for (let i = 0; i < 13; i++) {
+      const d = new Date(today.getFullYear(), today.getMonth() + i, n);
+      if (d.getDate() === n && d >= today) return d;
+    }
+    return today;
+  }
+  const daysBetween = (a, b) => Math.round((startOfDay(b) - startOfDay(a)) / 86400000);
+
+  // ---- 数日にまたがる予定（「12月1日から3日まで」「月曜から水曜まで」）----
+  function parseSpan(st, now) {
+    const today = startOfDay(now);
+    let m;
+    if ((m = take(st, /(\d{1,2})\s*[月/]\s*(\d{1,2})日?\s*(?:から|〜)\s*(?:(\d{1,2})\s*[月/]\s*)?(\d{1,2})日?(?:まで)?(?![\d:時分])/))) {
+      let a = new Date(today.getFullYear(), Number(m[1]) - 1, Number(m[2]));
+      if (a < today) a = new Date(a.getFullYear() + 1, a.getMonth(), a.getDate());
+      let b = new Date(a.getFullYear(), m[3] ? Number(m[3]) - 1 : a.getMonth(), Number(m[4]));
+      if (b < a) b = m[3] ? new Date(b.getFullYear() + 1, b.getMonth(), b.getDate()) : new Date(b.getFullYear(), b.getMonth() + 1, b.getDate());
+      return { date: a, spanDays: daysBetween(a, b) + 1 };
+    }
+    if ((m = take(st, /(\d{1,2})日\s*(?:から|〜|-)\s*(?:(\d{1,2})月\s*)?(\d{1,2})日(?:まで)?/))) {
+      const a = nearestDay(Number(m[1]), today);
+      let b = new Date(a.getFullYear(), m[2] ? Number(m[2]) - 1 : a.getMonth(), Number(m[3]));
+      if (b < a) b = new Date(b.getFullYear(), b.getMonth() + (m[2] ? 12 : 1), b.getDate());
+      return { date: a, spanDays: daysBetween(a, b) + 1 };
+    }
+    if ((m = take(st, new RegExp(`(?:(今週|来週|再来週)の?\\s*)?([${WD}])曜日?\\s*(?:から|〜)\\s*(?:(?:今週|来週|再来週)の?\\s*)?([${WD}])曜日?(?:まで)?`)))) {
+      const i = WD.indexOf(m[2]), j = WD.indexOf(m[3]);
+      const a = m[1] ? addDays(addDays(today, -today.getDay()), { 今週: 0, 来週: 7, 再来週: 14 }[m[1]] + i) : addDays(today, (i - today.getDay() + 7) % 7);
+      return { date: a, spanDays: ((j - i + 7) % 7) + 1 };
+    }
+    return null;
+  }
+
+  // ---- 繰り返し（「毎週月曜」「毎月1日」「毎日」など）----
+  function parseRecur(st, now) {
+    const today = startOfDay(now);
+    const nextDow = (i) => addDays(today, (i - today.getDay() + 7) % 7);
+    let m;
+    if (take(st, /毎週平日|平日毎日|毎平日/)) {
+      let d = today; while (d.getDay() === 0 || d.getDay() === 6) d = addDays(d, 1);
+      return { freq: 'WEEKDAYS', date: d };
+    }
+    if ((m = take(st, new RegExp(`(隔週|毎週|毎)\\s*([${WD}])曜日?`)))) return { freq: m[1] === '隔週' ? 'BIWEEKLY' : 'WEEKLY', date: nextDow(WD.indexOf(m[2])) };
+    if ((m = take(st, /毎月\s*(\d{1,2})日/))) return { freq: 'MONTHLY', date: nearestDay(Number(m[1]), today) };
+    if (take(st, /毎月末/)) return { freq: 'MONTHLY', monthEnd: true, date: new Date(today.getFullYear(), today.getMonth() + 1, 0) };
+    if ((m = take(st, /毎年\s*(\d{1,2})月\s*(\d{1,2})日/))) {
+      let d = new Date(today.getFullYear(), Number(m[1]) - 1, Number(m[2]));
+      if (d < today) d = new Date(d.getFullYear() + 1, d.getMonth(), d.getDate());
+      return { freq: 'YEARLY', date: d };
+    }
+    if (take(st, /毎日/)) return { freq: 'DAILY', date: null };
+    if (take(st, /隔週/)) return { freq: 'BIWEEKLY', date: null };
+    if (take(st, /毎週/)) return { freq: 'WEEKLY', date: null };
+    if (take(st, /毎月/)) return { freq: 'MONTHLY', date: null };
+    if (take(st, /毎年/)) return { freq: 'YEARLY', date: null };
+    return null;
+  }
+  // Google カレンダーに渡す繰り返しの指定
+  function recurRule(freq, date, monthEnd) {
+    const day = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][date.getDay()];
+    return {
+      DAILY: 'RRULE:FREQ=DAILY',
+      WEEKDAYS: 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+      WEEKLY: `RRULE:FREQ=WEEKLY;BYDAY=${day}`,
+      BIWEEKLY: `RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=${day}`,
+      MONTHLY: `RRULE:FREQ=MONTHLY;BYMONTHDAY=${monthEnd ? -1 : date.getDate()}`,
+      YEARLY: 'RRULE:FREQ=YEARLY',
+    }[freq] || null;
+  }
+
   // ---- 時間 ----
   const T = '(午前|午後|朝|昼|夕方|夜)?\\s*(\\d{1,2})\\s*(?:時|:)\\s*(半|\\d{1,2}\\s*分?)?';
-  function toMin(ap, h, mm) {
+  // guess：午前／午後を言わない 1〜6時は午後とみなす（「2時 歯医者」→ 14時）
+  function toMin(ap, h, mm, guess) {
     h = Number(h);
+    if (guess && !ap && h >= 1 && h <= 6) h += 12;
     let m = !mm ? 0 : mm.startsWith('半') ? 30 : parseInt(mm, 10);
     if (ap && /午後|夕方|夜/.test(ap) && h < 12) h += 12;
     if (ap === '昼' && h < 6) h += 12;
@@ -148,8 +241,9 @@
     return h * 60 + m;
   }
   function fixEnd(start, end) {
-    if (end <= start && end < 12 * 60 && end + 720 > start) end += 720;
-    if (end <= start) end = start + 60;
+    if (end === start) return start + 60;
+    if (end < start && end < 12 * 60 && end + 720 > start) return end + 720;
+    if (end < start) return end + 1440; // 日をまたぐ（23時から1時）
     return end;
   }
 
@@ -157,23 +251,28 @@
     let m;
     // 「19時から2時間」を先に見る（「19時から2時」と読まないように）
     if ((m = take(st, new RegExp(`${T}\\s*(?:から|より)\\s*(\\d+(?:\\.\\d+)?)\\s*(時間|分)(半)?(?:間)?`)))) {
-      const s = toMin(m[1], m[2], m[3]);
+      const s = toMin(m[1], m[2], m[3], true);
       const dur = m[5] === '時間' ? Number(m[4]) * 60 + (m[6] ? 30 : 0) : Number(m[4]);
       return { start: s, end: s + Math.round(dur), endSaid: true };
     }
     if ((m = take(st, new RegExp(`${T}\\s*(?:から|より|〜|-)\\s*${T}\\s*(?:まで)?`)))) {
-      const s = toMin(m[1], m[2], m[3]);
+      const s = toMin(m[1], m[2], m[3], true);
       // 終わりに午前/午後がなければ、始まりの午前/午後を引き継ぐ
       const e = toMin(m[4] || (m[1] && /午後|夕方|夜/.test(m[1]) ? m[1] : ''), m[5], m[6]);
       return { start: s, end: fixEnd(s, e), endSaid: true };
     }
     if ((m = take(st, /(?<![\d/])(\d{1,2})\s*-\s*(\d{1,2})(?![\d/日時])/))) {
-      const s = Number(m[1]) * 60, e = Number(m[2]) * 60;
+      const s = toMin('', m[1], '', true), e = Number(m[2]) * 60;
       if (s < 24 * 60 && e <= 24 * 60) return { start: s, end: fixEnd(s, e), endSaid: true };
     }
     if ((m = take(st, new RegExp(`${T}\\s*(?:から|より)?`)))) {
-      const s = toMin(m[1], m[2], m[3]);
+      const s = toMin(m[1], m[2], m[3], true);
       return { start: s, end: s + 60, endSaid: false };
+    }
+    // 「明後日の午後」のように時刻がない時間帯。「朝会」「夜勤」などの言葉は時間帯にしない
+    if ((m = take(st, /(?<=^|[\s、,，。の])(午前中|午前|午後|夕方|朝|昼|夜)(?=$|[\s、,，。]|に|から)/))) {
+      const [a, b] = { 午前中: [540, 720], 午前: [540, 600], 午後: [780, 840], 夕方: [1020, 1080], 朝: [540, 600], 昼: [720, 780], 夜: [1140, 1200] }[m[1]];
+      return { start: a, end: b, endSaid: false };
     }
     return null;
   }
@@ -227,7 +326,14 @@
     const st = { s: normalize(text) };
     const remind = parseRemind(st);
     const cal = parseCalendar(st, cals);
-    const date = parseDate(st, now);
+    const recur = parseRecur(st, now);
+    const span = recur ? null : parseSpan(st, now);
+    let date = span ? span.date : parseDate(st, now);
+    if (recur && recur.date && !date) date = recur.date;
+    // 「明日から3日間」
+    let spanDays = span ? span.spanDays : 1;
+    const nDays = !recur && !span && date && take(st, /(?:から\s*)?(\d+)\s*日間/);
+    if (nDays) spanDays = Number(nDays[1]);
     const time = parseTime(st);
     // 「場所は〇〇」とはっきり言ったら、そこを場所にする
     const said = take(st, new RegExp(`場所(?:は|が|:)\\s*([^、,，。]+?)(?:です)?(?=$|[、,，。])`));
@@ -239,7 +345,8 @@
     // 通知を言ったら予定（ToDoリストには通知が付けられないため）
     // 休みの言葉（代休・有給など）は時刻がなくても終日の予定
     const dayOff = DAY_OFF.test(rest.title);
-    const kind = !remind && !dayOff && (taskWord || (!time && !rest.location && !cal)) ? 'task' : 'event';
+    // 繰り返し（ToDoリストでは使えない）と数日にまたがる予定も予定にする
+    const kind = !remind && !dayOff && !recur && !(spanDays > 1 && !taskWord) && (taskWord || (!time && !rest.location && !cal)) ? 'task' : 'event';
     return {
       kind,
       taskWord,
@@ -253,6 +360,8 @@
       location: rest.location,
       title: rest.title,
       remind, // null | {minutes: number|'prevday', label}
+      spanDays,
+      recur: recur ? { freq: recur.freq, monthEnd: !!recur.monthEnd } : null,
     };
   }
 
@@ -353,7 +462,7 @@
     return [...best.values()].sort((a, b) => b.score - a.score).slice(0, limit).map((x) => x.text);
   }
 
-  const api = { parse, parseChange, normalize, applyDict, applyDictField, dictDiff, suggest };
+  const api = { parse, parseChange, normalize, applyDict, applyDictField, dictDiff, suggest, recurRule };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.KoeParse = api;
 })(typeof window !== 'undefined' ? window : globalThis);

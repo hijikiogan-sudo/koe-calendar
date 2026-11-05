@@ -8,7 +8,7 @@ const hm = (m) => (m == null ? '' : `${Math.floor(m / 60)}:${String(m % 60).padS
 const lines = fs.readFileSync(path.join(__dirname, 'cases.txt'), 'utf8').split('\n').filter((l) => l.trim() && !l.startsWith('#'));
 const out = lines.map((t) => {
   const r = parse(t, { now, calendars: cals });
-  return `${t}\n  → ${r.kind} ${r.calId} ${r.date.getMonth() + 1}/${r.date.getDate()} ${r.allDay ? '終日' : hm(r.start) + '-' + hm(r.end)} |内容:${r.title} |場所:${r.location} |通知:${r.remind ? r.remind.label : ''}`;
+  return `${t}\n  → ${r.kind} ${r.calId} ${r.date.getMonth() + 1}/${r.date.getDate()} ${r.allDay ? '終日' : hm(r.start) + '-' + hm(r.end)} |内容:${r.title} |場所:${r.location} |通知:${r.remind ? r.remind.label : ''}${r.spanDays > 1 ? ` |${r.spanDays}日間` : ''}${r.recur ? ` |繰り返し:${r.recur.freq}` : ''}`;
 }).join('\n') + '\n';
 const file = path.join(__dirname, 'expected.txt');
 if (process.argv.includes('--update') || !fs.existsSync(file)) { fs.writeFileSync(file, out); console.log('expected.txt を更新しました'); process.exit(0); }

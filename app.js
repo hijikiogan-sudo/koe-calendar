@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '202611051246'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
+  const APP_VERSION = '202611051259'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
   const SCOPES = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/tasks';
   const API = 'https://www.googleapis.com/calendar/v3';
   const WD = ['日', '月', '火', '水', '木', '金', '土'];
@@ -26,6 +26,10 @@
     events: [],
     tasks: [],
     tasksOk: false, // ToDoリストの許可をもらっているか
+    taskLists: [],  // 表示するToDoリスト
+    holidays: new Map(), // 日付 → 祝日名
+    authLost: false, // 接続が切れた（保存済みの予定を表示中）
+    stale: null,     // 電波がなく、いつの予定を表示しているか
     scrollTop: null,
     reqId: 0,
   };
@@ -52,6 +56,7 @@
     closeDayPop();
     $('#title').innerHTML = titleHTML();
     $('#demo-banner').hidden = !state.demo;
+    renderConn();
     const v = $('#view');
     const keepScroll = v.querySelector('.tg-scroll[data-init]');
     if (keepScroll) state.scrollTop = keepScroll.scrollTop;
@@ -74,7 +79,7 @@
   // 見出し：月を大きく、年は小さく添える
   function titleHTML() {
     const a = state.anchor;
-    if (state.view === 'day') return `${a.getMonth() + 1}月${a.getDate()}日<small>${WD[a.getDay()]}曜 ・ ${a.getFullYear()}</small>`;
+    if (state.view === 'day') return `${a.getMonth() + 1}月${a.getDate()}日`;
     if (state.view === 'week') {
       const [s, e] = range(); const last = addDays(e, -1);
       if (s.getMonth() === last.getMonth()) return `${s.getMonth() + 1}月<small>${s.getFullYear()}</small>`;
@@ -99,7 +104,7 @@
     const head = el('div', 'tg-row tg-head');
     head.appendChild(el('div'));
     days.forEach((d) => {
-      const h = el('button', 'dh' + (sameDay(d, today) ? ' today' : '') + (d.getDay() === 0 ? ' sun' : d.getDay() === 6 ? ' sat' : ''));
+      const h = el('button', 'dh' + (sameDay(d, today) ? ' today' : '') + (d.getDay() === 0 ? ' sun' : d.getDay() === 6 ? ' sat' : '') + (state.holidays.has(ymd(d)) ? ' holiday' : ''));
       h.innerHTML = `${WD[d.getDay()]}<b>${d.getDate()}</b>`;
       h.onclick = () => { state.anchor = d; setView('day'); };
       head.appendChild(h);
@@ -192,7 +197,7 @@
     const body = el('div', 'mg-body');
     for (let i = 0; i < 42; i++) {
       const d = addDays(s, i);
-      const cell = el('button', 'mc' + (d.getMonth() !== m ? ' out' : '') + (sameDay(d, today) ? ' today' : ''));
+      const cell = el('button', 'mc' + (d.getMonth() !== m ? ' out' : '') + (sameDay(d, today) ? ' today' : '') + (state.holidays.has(ymd(d)) ? ' holiday' : ''));
       cell.appendChild(Object.assign(el('div', 'num'), { textContent: d.getDate() }));
       const evs = eventsOn(d).sort((a, b) => (b.allDay - a.allDay) || (a.start - b.start))
         .concat(state.tasks.filter((t) => t.due && sameDay(t.due, d)).map((t) => ({ task: true, title: t.title })));
@@ -244,6 +249,63 @@
     pop.querySelector('.dp-day').onclick = () => { closeDayPop(); state.anchor = d; setView('day'); };
   }
 
+  // ---------- 検索 ----------
+  function openSearch() {
+    openSheet(`<h2>検索</h2>
+      <input class="search-input" id="s-q" type="search" placeholder="予定名や場所、タスクで探す" autocomplete="off" enterkeyhint="search">
+      <ul class="search-res" id="s-res"></ul>`);
+    const q = $('#s-q'); q.focus();
+    let timer, seq = 0;
+    const run = async () => {
+      const word = q.value.trim(), id = ++seq, box = $('#s-res');
+      if (!word) { box.innerHTML = ''; return; }
+      box.innerHTML = '<li class="dp-empty">探しています…</li>';
+      let evs = [], offline = false;
+      try { evs = await searchEvents(word); } catch (err) {
+        if (err && err.auth) { connectionLost(); }
+        offline = true;
+        const w = word.toLowerCase();
+        evs = state.events.filter((e) => (e.title + e.location).toLowerCase().includes(w));
+      }
+      if (id !== seq) return;
+      const w = word.toLowerCase();
+      const tks = state.tasks.filter((t) => t.title.toLowerCase().includes(w));
+      const now = Date.now();
+      evs.sort((a, b) => { // これからの予定を近い順に、その後ろに過去の予定を新しい順に
+        const fa = a.end >= now, fb = b.end >= now;
+        return fa !== fb ? (fa ? -1 : 1) : fa ? a.start - b.start : b.start - a.start;
+      });
+      box.innerHTML = `${offline ? '<li class="dp-empty">通信できないので、表示中の予定から探しました</li>' : ''}
+        ${tks.map((t, i) => `<li data-t="${i}"><span class="dp-time">タスク</span><span class="dp-title dp-task">☐ ${esc(t.title)}<small>${t.due ? md(t.due) : '期限なし'}</small></span></li>`).join('')}
+        ${evs.slice(0, 50).map((ev, i) => `<li data-e="${i}"><span class="dp-time">${ev.start.getFullYear() % 100}/${ev.start.getMonth() + 1}/${ev.start.getDate()}</span>
+          <span class="dp-title" style="--c:${ev.color}">${esc(ev.title)}<small>${ev.allDay ? '終日' : hm(ev.start)}${ev.location ? ` ・ ${esc(ev.location)}` : ''}</small></span></li>`).join('')}
+        ${!evs.length && !tks.length ? '<li class="dp-empty">見つかりませんでした</li>' : ''}`;
+      box.querySelectorAll('li[data-e]').forEach((li) => li.onclick = () => {
+        const ev = evs[Number(li.dataset.e)];
+        state.anchor = startOfDay(ev.start); state.scrollTop = null;
+        load(); openEvent(ev);
+      });
+      box.querySelectorAll('li[data-t]').forEach((li) => li.onclick = () => openTask(tks[Number(li.dataset.t)]));
+    };
+    q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 350); });
+  }
+  async function searchEvents(word) {
+    if (state.demo) {
+      const w = word.toLowerCase();
+      return demoEvents().filter((e) => (e.title + e.location).toLowerCase().includes(w));
+    }
+    if (!state.token) throw new Error('offline');
+    const now = new Date();
+    const cals = state.calendars.filter((c) => !isHolidayCal(c) && !state.hidden.has(c.id));
+    const lists = await Promise.all(cals.map(async (c) => {
+      const p = new URLSearchParams({ q: word, singleEvents: 'true', orderBy: 'startTime', maxResults: '100',
+        timeMin: addDays(now, -730).toISOString(), timeMax: addDays(now, 730).toISOString() });
+      const data = await api(`/calendars/${encodeURIComponent(c.id)}/events?${p}`);
+      return (data.items || []).map((it) => mapEvent(it, c)).filter(Boolean);
+    }));
+    return lists.flat();
+  }
+
   // ---------- シート ----------
   function openSheet(html) {
     $('#sheet').innerHTML = `<div class="grab"></div>${html}`;
@@ -266,6 +328,7 @@
       <div class="row"><span>日時</span><span>${when}</span></div>
       ${ev.location ? `<div class="row"><span>場所</span><span>${esc(ev.location)}</span></div>` : ''}
       <div class="row"><span>カレンダー</span><span>${esc(cal ? cal.name : '')}</span></div>
+      ${ev.description ? `<div class="row"><span>メモ</span><span class="memo">${esc(htmlToText(ev.description))}</span></div>` : ''}
       ${canEdit ? `
         <form class="chg-bar" id="e-form">
           <input id="e-text" type="text" placeholder="変更を話すか打つ（例：15時からに変更）" autocomplete="off" enterkeyhint="send">
@@ -298,8 +361,8 @@
         try {
           await deleteEvent(ev);
           closeSheet();
-          toast(`削除しました：${ev.title}`);
           load();
+          showUndo(`削除しました：${ev.title}`, async () => { await undeleteEvent(ev); load(); });
         } catch (err) { b.disabled = false; b.textContent = '削除する'; handleError(err); }
       };
     };
@@ -351,13 +414,55 @@
   // ---------- 辞書（聞き取った言葉 → 表記） ----------
   // 例：「隆」→「孝」、「サーフ会議」→「スタッフ会議」。この端末に保存する
   const getDict = () => store.get('dict', []);
+  // 辞書はGoogle ToDoの「Koe設定」リストに置いて、iPhoneとパソコンで共有する
+  let dictPushTimer;
+  function setDict(d) {
+    store.set('dict', d); store.set('dictAt', Date.now());
+    clearTimeout(dictPushTimer);
+    dictPushTimer = setTimeout(() => pushDict().catch((err) => console.warn('辞書の保存に失敗', err)), 800);
+  }
+  async function settingsList(create) {
+    const ls = await api(`${TASKS_API}/users/@me/lists?maxResults=100`);
+    const hit = (ls.items || []).find((l) => l.title === SETTINGS_LIST);
+    if (hit || !create) return hit || null;
+    return api(`${TASKS_API}/users/@me/lists`, 'POST', { title: SETTINGS_LIST });
+  }
+  async function pushDict() {
+    if (state.demo || !state.token || !state.tasksOk) return;
+    const list = await settingsList(true);
+    const path = `${TASKS_API}/lists/${encodeURIComponent(list.id)}/tasks`;
+    const old = (await api(`${path}?maxResults=100&showHidden=true`)).items || [];
+    const json = JSON.stringify({ at: store.get('dictAt', Date.now()), items: getDict() });
+    const chunks = json.match(/[\s\S]{1,7000}/g) || [];
+    await Promise.all(old.filter((t) => /^dict-/.test(t.title || '')).map((t) => api(`${path}/${encodeURIComponent(t.id)}`, 'DELETE')));
+    for (let i = 0; i < chunks.length; i++) await api(path, 'POST', { title: `dict-${String(i).padStart(3, '0')}`, notes: chunks[i] });
+  }
+  async function syncDict() {
+    if (state.demo || !state.token || !state.tasksOk) return;
+    try {
+      const list = await settingsList(false);
+      const local = getDict(), localAt = store.get('dictAt', 0);
+      if (!list) { if (local.length) await pushDict(); return; }
+      const items = ((await api(`${TASKS_API}/lists/${encodeURIComponent(list.id)}/tasks?maxResults=100`)).items || [])
+        .filter((t) => /^dict-/.test(t.title || '')).sort((a, b) => (a.title < b.title ? -1 : 1));
+      if (!items.length) { if (local.length) await pushDict(); return; }
+      const remote = JSON.parse(items.map((t) => t.notes || '').join(''));
+      if (!localAt) { // この端末で初めて：両方の登録を合わせる
+        const merged = [...remote.items, ...local.filter((x) => !remote.items.some((r) => r.from === x.from))];
+        store.set('dict', merged); store.set('dictAt', Date.now());
+        if (merged.length !== remote.items.length) await pushDict();
+      } else if (remote.at > localAt) { store.set('dict', remote.items); store.set('dictAt', remote.at); }
+      else if (remote.at < localAt) await pushDict();
+    } catch (err) { console.warn('辞書の共有に失敗', err); }
+  }
+
   const applyDict = (text) => window.KoeParse.applyDict(text, getDict());
   const applyDictField = (v) => window.KoeParse.applyDictField(v, getDict());
   function addDict(fromText, to) {
     const froms = Array.isArray(fromText) ? fromText : fromText.split(/[、,，\s]+/).filter(Boolean);
     const d = getDict().filter((x) => !froms.includes(x.from));
     froms.forEach((from) => d.push({ from, to }));
-    store.set('dict', d);
+    setDict(d);
     return froms;
   }
 
@@ -400,7 +505,7 @@
         <button>追加</button>
       </form>
 
-      <p class="note" style="margin-top:6px">iPhoneは「たかし」を「隆」などの漢字で書き起こします。確認画面に出た字を登録してください。「、」で区切ると複数まとめて登録できます。</p>
+      <p class="note" style="margin-top:6px">iPhoneは「たかし」を「隆」などの漢字で書き起こします。確認画面に出た字を登録してください。「、」で区切ると複数まとめて登録できます。Google ToDoの「Koe設定」リストを使って、iPhoneとパソコンで共有します。</p>
 
       <div class="sec">もしかしての候補</div>
       <p class="note" style="margin-top:0" id="m-corpus"></p>
@@ -422,7 +527,7 @@
       sh.querySelectorAll('.modes button').forEach((x) => x.classList.toggle('on', x === b));
     });
     sh.querySelectorAll('.dict .del').forEach((b) => b.onclick = () => {
-      const d = getDict(); d.splice(Number(b.dataset.i), 1); store.set('dict', d);
+      const d = getDict(); d.splice(Number(b.dataset.i), 1); setDict(d);
       const top = sh.scrollTop; openMenu(); $('#sheet').scrollTop = top;
     });
     $('#dict-form').onsubmit = (e) => {
@@ -464,22 +569,92 @@
     if (state.demo) {
       state.events = demoEvents().filter((ev) => !state.hidden.has(ev.calId) && ev.start < e && ev.end > s);
       state.tasks = demoTaskList().slice();
+      state.taskLists = DEMO_LISTS;
+      state.holidays = new Map([[`${new Date().getFullYear()}-11-03`, '文化の日']]);
       render(); return;
     }
+    if (!state.token) { loadCached(); return; } // 接続が切れている間は保存済みを表示
     $('#view').classList.add('loading');
     try {
-      const visible = state.calendars.filter((c) => !state.hidden.has(c.id));
-      const tasksP = state.tasksOk ? fetchTasks().catch((err) => { if (err.scope) state.tasksOk = false; else console.error(err); return state.tasks; }) : Promise.resolve([]);
-      const [lists, tasks] = await Promise.all([Promise.all(visible.map((c) => fetchEvents(c, s, e))), tasksP]);
+      const holidayCals = state.calendars.filter(isHolidayCal);
+      const targets = state.calendars.filter((c) => !state.hidden.has(c.id) || isHolidayCal(c));
+      const tasksP = state.tasksOk ? fetchTasks().catch((err) => { if (err.scope) state.tasksOk = false; else if (err.auth) throw err; else console.error(err); return state.tasks; }) : Promise.resolve([]);
+      const [lists, tasks] = await Promise.all([Promise.all(targets.map((c) => fetchEvents(c, s, e))), tasksP]);
       if (id !== state.reqId) return;
-      state.events = lists.flat();
+      const hol = new Map();
+      lists.flat().forEach((ev) => { if (holidayCals.some((c) => c.id === ev.calId)) hol.set(ymd(ev.start), ev.title); });
+      state.holidays = hol;
+      state.events = lists.flat().filter((ev) => !state.hidden.has(ev.calId));
       state.tasks = tasks;
+      state.stale = null; state.authLost = false;
+      saveCache(rangeKey(), state.events, tasks, hol);
       render();
     } catch (err) {
-      handleError(err);
+      if (id !== state.reqId) return;
+      if (err && err.auth) { handleError(err); return; }
+      console.warn(err);
+      if (!loadCached()) toast('読み込めませんでした。通信を確認してください');
     } finally {
       if (id === state.reqId) $('#view').classList.remove('loading');
     }
+  }
+
+  // ---------- 保存（電波がない・接続が切れたときの表示用。この端末だけ）----------
+  const isHolidayCal = (c) => /#holiday@/.test(c.id);
+  const rangeKey = () => `${state.view}|${ymd(range()[0])}`;
+  function saveCache(key, events, tasks, hol) {
+    const c = store.get('evCache', {});
+    c[key] = { at: Date.now(), ev: events, hol: [...hol] };
+    const keys = Object.keys(c).sort((x, y) => c[y].at - c[x].at);
+    keys.slice(12).forEach((k) => delete c[k]); // 新しい12画面分だけ残す
+    store.set('evCache', c);
+    store.set('taskCache', { tasks, lists: state.taskLists });
+  }
+  function loadCached() {
+    const hit = store.get('evCache', {})[rangeKey()];
+    const tc = store.get('taskCache', null);
+    if (tc) {
+      state.tasks = (tc.tasks || []).map((t) => ({ ...t, due: t.due ? new Date(t.due) : null }));
+      state.taskLists = tc.lists || [];
+    }
+    state.events = hit ? hit.ev.map((ev) => ({ ...ev, start: new Date(ev.start), end: new Date(ev.end) })).filter((ev) => !state.hidden.has(ev.calId)) : [];
+    state.holidays = new Map(hit ? hit.hol : []);
+    state.stale = hit ? hit.at : -1;
+    render();
+    return !!hit;
+  }
+  function renderConn() {
+    const bar = $('#conn-bar');
+    if (!bar) return;
+    if (state.demo || (!state.authLost && !state.stale)) { bar.hidden = true; return; }
+    const when = state.stale > 0 ? `（${new Date(state.stale).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}時点）` : state.stale === -1 ? '（この期間は保存がありません）' : '';
+    bar.hidden = false;
+    bar.innerHTML = state.authLost
+      ? `<span>接続が切れました${when}</span><button id="conn-retry">再接続</button>`
+      : `<span>電波がないため、保存済みの予定を表示中${when}</span><button id="conn-retry">更新</button>`;
+    $('#conn-retry').onclick = () => {
+      if (!state.authLost) { load(); return; }
+      if (tokenClient) tokenClient.requestAccessToken({ prompt: '' });
+      else toast('通信を確認してから、もう一度押してください');
+    };
+  }
+
+  // ---------- 元に戻す ----------
+  function showUndo(msg, fn) {
+    document.querySelectorAll('.undo-bar').forEach((x) => x.remove());
+    const box = el('div', 'undo-bar');
+    box.innerHTML = `<span>${esc(msg)}</span><button>元に戻す</button>`;
+    $('#app').appendChild(box);
+    const timer = setTimeout(() => box.remove(), 10000);
+    box.querySelector('button').onclick = async () => {
+      clearTimeout(timer); box.remove();
+      try { await fn(); toast('元に戻しました'); } catch (err) { handleError(err); }
+    };
+  }
+
+  function htmlToText(html) {
+    const t = String(html).replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li)>/gi, '\n');
+    return (new DOMParser().parseFromString(t, 'text/html').body.textContent || '').trim();
   }
 
   async function api(path, method = 'GET', body) {
@@ -501,6 +676,20 @@
     if (!state.hiddenSaved) {
       (data.items || []).forEach((c) => { if (c.selected === false) state.hidden.add(c.id); });
     }
+    store.set('calCache', state.calendars);
+  }
+
+  function mapEvent(it, cal) {
+    if (it.status === 'cancelled' || !it.start) return null;
+    const allDay = !!it.start.date;
+    return {
+      id: it.id, calId: cal.id, title: it.summary || '（タイトルなし）', location: it.location || '', description: it.description || '',
+      allDay,
+      start: allDay ? parseYMD(it.start.date) : new Date(it.start.dateTime),
+      end: allDay ? parseYMD(it.end.date) : new Date(it.end.dateTime),
+      color: cal.color, text: cal.text,
+      reminders: it.reminders, recurring: !!it.recurringEventId,
+    };
   }
 
   async function fetchEvents(cal, s, e) {
@@ -512,18 +701,7 @@
       });
       if (pageToken) q.set('pageToken', pageToken);
       const data = await api(`/calendars/${encodeURIComponent(cal.id)}/events?${q}`);
-      (data.items || []).forEach((it) => {
-        if (it.status === 'cancelled' || !it.start) return;
-        const allDay = !!it.start.date;
-        out.push({
-          id: it.id, calId: cal.id, title: it.summary || '（タイトルなし）', location: it.location || '',
-          allDay,
-          start: allDay ? parseYMD(it.start.date) : new Date(it.start.dateTime),
-          end: allDay ? parseYMD(it.end.date) : new Date(it.end.dateTime),
-          color: cal.color, text: cal.text,
-          reminders: it.reminders, recurring: !!it.recurringEventId,
-        });
-      });
+      (data.items || []).forEach((it) => { const ev = mapEvent(it, cal); if (ev) out.push(ev); });
       pageToken = data.nextPageToken || '';
     } while (pageToken);
     return out;
@@ -541,7 +719,7 @@
     const D = (o) => addDays(startOfDay(new Date()), o);
     demoStore = [
       mk('work', '朝会', '', t(-1, 9), t(-1, 9, 30)),
-      mk('work', '打ち合わせ', '会議室A', t(0, 14), t(0, 15)),
+      Object.assign(mk('work', '打ち合わせ', '会議室A', t(0, 14), t(0, 15)), { description: '資料を持参<br>議題は前回の続き' }),
       mk('me', '勉強会', '', D(1), D(2), true),
       mk('work', '面談', '会議室B', t(2, 10), t(2, 11, 30)),
       mk('me', '歯医者', '〇〇歯科', t(2, 10, 30), t(2, 11, 15)),
@@ -569,6 +747,10 @@
     { v: '60', label: '1時間前' }, { v: '120', label: '2時間前' }, { v: 'prevday', label: '前の日' },
   ];
   const minLabel = (m) => (m % 1440 === 0 ? `${m / 1440}日前` : m % 60 === 0 ? `${m / 60}時間前` : `${m}分前`);
+  const RECURS = [
+    { v: '', label: '繰り返さない' }, { v: 'DAILY', label: '毎日' }, { v: 'WEEKDAYS', label: '平日のみ' }, { v: 'WEEKLY', label: '毎週' },
+    { v: 'BIWEEKLY', label: '隔週' }, { v: 'MONTHLY', label: '毎月' }, { v: 'YEARLY', label: '毎年' },
+  ];
   const writableCals = () => state.calendars.filter((c) => c.writable);
 
   // v: {kind,calId,title,date,noDue,allDay,start,end,location,remind,spanDays}
@@ -609,6 +791,9 @@
         <input id="c-end" type="time" value="${minToHM(end)}" ${v.allDay ? 'disabled' : ''}>
       </div></div>
       ${v.endDays && !v.allDay ? `<p class="note ev-only" style="margin:4px 0 0;text-align:right">終わりは ${v.endDays}日後（${md(addDays(v.date || startOfDay(new Date()), v.endDays))}）の上記の時刻です</p>` : ''}
+      ${v.spanDays > 1 ? `<p class="note ev-only" style="margin:4px 0 0;text-align:right">${v.spanDays}日間（〜${md(addDays(v.date, v.spanDays - 1))}）の終日予定です</p>` : ''}
+      ${opt.allowRecur ? `<label class="f ev-only"><span class="fl">繰り返し</span><select id="c-recur">${RECURS.map((r) => `<option value="${r.v}" ${r.v === (v.recur || '') ? 'selected' : ''}>${r.label}</option>`).join('')}</select></label>` : ''}
+      ${!opt.fixedKind && state.taskLists.length > 1 ? `<div class="f task-only"><span class="fl">リスト</span><div class="cal-chips">${state.taskLists.map((l) => `<button type="button" class="cc lc${l.id === (v.listId || state.taskLists[0].id) ? ' on' : ''}" data-id="${esc(l.id)}" style="--c:var(--task);--ct:var(--on-task)">${esc(l.title)}</button>`).join('')}</div></div>` : ''}
       <label class="f ev-only${ch('location')}"><span class="fl">場所</span><input id="c-loc" value="${esc(v.location || '')}" placeholder="なし"></label>
       <div class="sugg ev-only" id="s-loc" hidden></div>
       <label class="f ev-only${ch('remind')}"><span class="fl">通知</span><select id="c-remind">${reminds.map((r) =>
@@ -631,9 +816,14 @@
     attachSuggest($('#c-loc'), $('#s-loc'), 'locs');
     setKind(kind);
     let calId = v.calId;
-    sh.querySelectorAll('.cc').forEach((b) => b.onclick = () => {
+    sh.querySelectorAll('.cc:not(.lc)').forEach((b) => b.onclick = () => {
       calId = b.dataset.id;
-      sh.querySelectorAll('.cc').forEach((x) => x.classList.toggle('on', x === b));
+      sh.querySelectorAll('.cc:not(.lc)').forEach((x) => x.classList.toggle('on', x === b));
+    });
+    let listId = v.listId || (state.taskLists[0] && state.taskLists[0].id);
+    sh.querySelectorAll('.cc.lc').forEach((b) => b.onclick = () => {
+      listId = b.dataset.id;
+      sh.querySelectorAll('.cc.lc').forEach((x) => x.classList.toggle('on', x === b));
     });
     $('#c-nodue').onchange = (e) => { $('#c-date').disabled = e.target.checked; };
     $('#c-allday').onchange = (e) => { $('#c-start').disabled = $('#c-end').disabled = e.target.checked; };
@@ -657,6 +847,9 @@
         remind: $('#c-remind').value,
         spanDays: v.spanDays || 1,
         endDays: v.endDays || 0,
+        listId,
+        recur: $('#c-recur') ? $('#c-recur').value : '',
+        monthEnd: !!v.monthEnd,
       };
       if (!out.noDue && isNaN(out.date)) { toast('日付を入れてください'); return; }
       const ok = $('#c-ok');
@@ -815,8 +1008,10 @@
       kind: p.kind, calId: p.calId, title: p.title, date: p.date, noDue: p.kind === 'task' && !p.dateSaid && !slot,
       allDay: p.allDay, start: p.start, end: p.end,
       location: p.location, remind: p.remind ? String(p.remind.minutes) : '', remindLabel: p.remind && p.remind.label,
+      spanDays: p.spanDays, recur: p.recur ? p.recur.freq : '', monthEnd: !!(p.recur && p.recur.monthEnd),
+      listId: (p.calSaid && state.taskLists.find((l) => { const c = cals.find((x) => x.id === p.calId); return c && (c.name.includes(l.title) || l.title.includes(c.name)); }) || {}).id,
     }, {
-      heading: 'この内容で登録しますか？', heard: text, busyLabel: '登録中…',
+      heading: 'この内容で登録しますか？', heard: text, busyLabel: '登録中…', allowRecur: true,
       onFixed: (title, location) => { p.title = title; p.location = location; }, // 直した後を基準に、案内の重複を防ぐ
       onOk: async (v) => {
         if (v.kind === 'task') await insertTask(v); else await insertEvent(v);
@@ -831,51 +1026,74 @@
   // ---------- タスク（Google ToDoリスト） ----------
   const TASKS_API = 'https://tasks.googleapis.com/tasks/v1';
   let demoTasks = null;
+  const DEMO_LISTS = [{ id: 'l1', title: 'マイタスク' }, { id: 'l2', title: 'ファミリー' }];
   function demoTaskList() {
     if (demoTasks) return demoTasks;
     const D = (o) => addDays(startOfDay(new Date()), o);
     demoTasks = [
-      { id: 't1', title: '書類を出す', due: D(2) },
-      { id: 't2', title: 'チェーンに注油', due: null },
-      { id: 't3', title: '電気代を払う', due: D(-1) },
+      { id: 't1', listId: 'l1', listTitle: 'マイタスク', title: '書類を出す', due: D(2) },
+      { id: 't2', listId: 'l1', listTitle: 'マイタスク', title: 'チェーンに注油', due: null },
+      { id: 't3', listId: 'l1', listTitle: 'マイタスク', title: '電気代を払う', due: D(-1) },
+      { id: 't4', listId: 'l2', listTitle: 'ファミリー', title: '牛乳を買う', due: null },
     ];
     return demoTasks;
   }
 
+  const SETTINGS_LIST = 'Koe設定'; // 辞書の共有に使う。Koeの一覧には出さない
+  let allLists = [];
   async function fetchTasks() {
+    const ls = await api(`${TASKS_API}/users/@me/lists?maxResults=100`);
+    allLists = ls.items || [];
+    state.taskLists = allLists.filter((l) => l.title !== SETTINGS_LIST).map((l) => ({ id: l.id, title: l.title }));
     const out = [];
-    let pageToken = '';
-    do {
-      const q = new URLSearchParams({ showCompleted: 'false', showHidden: 'false', maxResults: '100' });
-      if (pageToken) q.set('pageToken', pageToken);
-      const data = await api(`${TASKS_API}/lists/@default/tasks?${q}`);
-      (data.items || []).forEach((t) => {
-        if (t.status === 'completed' || t.deleted || !t.title) return;
-        out.push({ id: t.id, title: t.title, due: t.due ? parseYMD(t.due.slice(0, 10)) : null, parent: t.parent });
-      });
-      pageToken = data.nextPageToken || '';
-    } while (pageToken);
+    await Promise.all(state.taskLists.map(async (l) => {
+      let pageToken = '';
+      do {
+        const q = new URLSearchParams({ showCompleted: 'false', showHidden: 'false', maxResults: '100' });
+        if (pageToken) q.set('pageToken', pageToken);
+        const data = await api(`${TASKS_API}/lists/${encodeURIComponent(l.id)}/tasks?${q}`);
+        (data.items || []).forEach((t) => {
+          if (t.status === 'completed' || t.deleted || !t.title) return;
+          out.push({ id: t.id, listId: l.id, listTitle: l.title, title: t.title, due: t.due ? parseYMD(t.due.slice(0, 10)) : null, parent: t.parent });
+        });
+        pageToken = data.nextPageToken || '';
+      } while (pageToken);
+    }));
     return out;
   }
 
   const dueStr = (d) => `${ymd(d)}T00:00:00.000Z`;
+  const taskPath = (t) => `${TASKS_API}/lists/${encodeURIComponent(t.listId || '@default')}/tasks/${encodeURIComponent(t.id)}`;
   async function insertTask(v) {
-    if (state.demo) { demoTaskList().push({ id: 't' + Date.now(), title: v.title, due: v.noDue ? null : v.date }); return; }
+    const listId = v.listId || (state.taskLists[0] && state.taskLists[0].id) || '@default';
+    if (state.demo) {
+      const l = DEMO_LISTS.find((x) => x.id === listId) || DEMO_LISTS[0];
+      demoTaskList().push({ id: 't' + Date.now(), listId: l.id, listTitle: l.title, title: v.title, due: v.noDue ? null : v.date });
+      return;
+    }
     const body = { title: v.title };
     if (!v.noDue) body.due = dueStr(v.date);
-    await api(`${TASKS_API}/lists/@default/tasks`, 'POST', body);
+    await api(`${TASKS_API}/lists/${encodeURIComponent(listId)}/tasks`, 'POST', body);
   }
   async function updateTask(t, v) {
     if (state.demo) { Object.assign(demoTaskList().find((x) => x.id === t.id), { title: v.title, due: v.noDue ? null : v.date }); return; }
-    await api(`${TASKS_API}/lists/@default/tasks/${encodeURIComponent(t.id)}`, 'PATCH', { title: v.title, due: v.noDue ? null : dueStr(v.date) });
+    await api(taskPath(t), 'PATCH', { title: v.title, due: v.noDue ? null : dueStr(v.date) });
   }
   async function completeTask(t) {
     if (state.demo) { demoTasks = demoTaskList().filter((x) => x.id !== t.id); return; }
-    await api(`${TASKS_API}/lists/@default/tasks/${encodeURIComponent(t.id)}`, 'PATCH', { status: 'completed' });
+    await api(taskPath(t), 'PATCH', { status: 'completed' });
+  }
+  async function uncompleteTask(t) {
+    if (state.demo) { demoTasks = demoTaskList().concat(t); return; }
+    await api(taskPath(t), 'PATCH', { status: 'needsAction', completed: null });
   }
   async function deleteTask(t) {
     if (state.demo) { demoTasks = demoTaskList().filter((x) => x.id !== t.id); return; }
-    await api(`${TASKS_API}/lists/@default/tasks/${encodeURIComponent(t.id)}`, 'DELETE');
+    await api(taskPath(t), 'DELETE');
+  }
+  async function undeleteTask(t) {
+    if (state.demo) { demoTasks = demoTaskList().concat(t); return; }
+    await api(taskPath(t), 'PATCH', { deleted: false });
   }
 
   // 表示している期間までに期限があるもの（期限切れを含む）と、期限なし
@@ -887,9 +1105,9 @@
 
   function renderTasks() {
     const box = $('#tasks');
-    if (!state.token && !state.demo) { box.hidden = true; return; }
+    if (!state.token && !state.demo && !state.tasks.length) { box.hidden = true; return; }
     box.hidden = false;
-    if (!state.demo && !state.tasksOk) {
+    if (state.token && !state.demo && !state.tasksOk) {
       box.innerHTML = `<div class="tk-head"><b>タスク</b><button class="link" id="tk-auth">ToDoリストを表示するには、もう一度ログイン</button></div>`;
       $('#tk-auth').onclick = () => tokenClient && tokenClient.requestAccessToken();
       return;
@@ -902,7 +1120,7 @@
       <ul class="tk-list" ${open ? '' : 'hidden'}>${list.map((t) => {
         const late = t.due && t.due < today;
         return `<li data-id="${esc(t.id)}"><button class="tk-box" aria-label="完了にする"></button>
-          <button class="tk-title">${esc(t.title)}</button>
+          <button class="tk-title">${esc(t.title)}${state.taskLists.length > 1 && t.listTitle ? `<small>${esc(t.listTitle)}</small>` : ''}</button>
           <span class="tk-due${late ? ' late' : ''}">${t.due ? `${t.due.getMonth() + 1}/${t.due.getDate()}（${WD[t.due.getDay()]}）${late ? ' 期限切れ' : ''}` : '期限なし'}</span></li>`;
       }).join('') || '<li class="tk-empty">この期間のタスクはありません</li>'}</ul>`;
     $('#tk-toggle').onclick = () => { store.set('tasksOpen', !open); renderTasks(); };
@@ -917,7 +1135,7 @@
     if (li) li.classList.add('done');
     try {
       await completeTask(t);
-      toast(`完了：${t.title}`);
+      showUndo(`完了：${t.title}`, async () => { await uncompleteTask(t); load(); });
       setTimeout(() => { state.tasks = state.tasks.filter((x) => x.id !== t.id); render(); }, 500);
     } catch (err) { if (li) li.classList.remove('done'); handleError(err); }
   }
@@ -929,6 +1147,7 @@
       <h2>${esc(t.title)}</h2>
       <div class="row"><span>種類</span><span><span class="tag t-task">タスク</span></span></div>
       <div class="row"><span>期限</span><span>${due}</span></div>
+      ${t.listTitle ? `<div class="row"><span>リスト</span><span>${esc(t.listTitle)}</span></div>` : ''}
       <button class="ok" id="t-done">完了にする</button>
       <div class="e-acts" id="t-acts">
         <button class="act" id="t-edit">手で直す</button>
@@ -947,7 +1166,10 @@
       $('#t-keep').onclick = () => openTask(t);
       $('#t-del2').onclick = async () => {
         const b = $('#t-del2'); b.disabled = true; b.textContent = '削除中…';
-        try { await deleteTask(t); closeSheet(); toast(`削除しました：${t.title}`); load(); }
+        try {
+          await deleteTask(t); closeSheet(); load();
+          showUndo(`削除しました：${t.title}`, async () => { await undeleteTask(t); load(); });
+        }
         catch (err) { b.disabled = false; b.textContent = '削除する'; handleError(err); }
       };
     };
@@ -1018,6 +1240,7 @@
       const min = v.remind === 'prevday' ? (v.allDay ? 15 * 60 : 24 * 60) : v.remind ? Number(v.remind) : null;
       body.reminders = { useDefault: false, overrides: min != null ? [{ method: 'popup', minutes: min }] : [] };
     }
+    if (v.recur) { const rule = window.KoeParse.recurRule(v.recur, v.date, v.monthEnd); if (rule) body.recurrence = [rule]; }
     return { body, startDate: v.allDay ? v.date : at(v.start), endDate: v.allDay ? addDays(v.date, v.spanDays || 1) : at(endMin) };
   }
 
@@ -1051,6 +1274,10 @@
     }
   }
 
+  async function undeleteEvent(ev) {
+    if (state.demo) { demoStore = demoEvents().concat(ev); return; }
+    await api(`/calendars/${encodeURIComponent(ev.calId)}/events/${encodeURIComponent(ev.id)}`, 'PATCH', { status: 'confirmed' });
+  }
   async function deleteEvent(ev) {
     if (state.demo) { demoStore = demoEvents().filter((e) => e.id !== ev.id); return; }
     await api(`/calendars/${encodeURIComponent(ev.calId)}/events/${encodeURIComponent(ev.id)}`, 'DELETE');
@@ -1083,28 +1310,37 @@
   function listen(SR = window.SpeechRecognition || window.webkitSpeechRecognition) {
     voice.heard = voice.final = voice.error = '';
     setHeard('');
-    $('#v-hint').textContent = '聞き取り中…話し終えたら確認画面へ';
+    $('#v-hint').textContent = '聞き取り中…話し終えて2秒ほど待つと確認画面へ';
     $('#voice').classList.add('on');
     const rec = new SR();
     rec.lang = 'ja-JP';
     rec.interimResults = true;
-    rec.continuous = false; // 話し終えて少し黙ると自動で止まる
+    rec.continuous = true; // 項目の間で少し黙っても止まらない。2秒黙ったらこちらで止める
     rec.maxAlternatives = 1;
+    const stopLater = () => {
+      clearTimeout(voice.silence);
+      voice.silence = setTimeout(() => { if (voice.rec === rec) rec.stop(); }, 2000);
+    };
     rec.onresult = (e) => {
-      let fin = '', interim = '';
+      // iPhoneは結果を累積して返すことがあるので、同じ内容を二重に足さない
+      const join = (acc, t) => (t.startsWith(acc) ? t : acc.startsWith(t) ? acc : acc + t);
+      let fin = '', all = '';
       for (let i = 0; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) fin += r[0].transcript; else interim += r[0].transcript;
+        const r = e.results[i], t = r[0].transcript;
+        all = join(all, t);
+        if (r.isFinal) fin = join(fin, t);
       }
-      voice.final = fin; voice.heard = fin + interim;
-      setHeard(voice.heard);
+      voice.final = fin; voice.heard = all;
+      setHeard(all);
+      stopLater();
     };
     rec.onerror = (e) => { voice.error = e.error; };
     rec.onend = () => {
+      clearTimeout(voice.silence);
       $('#voice').classList.remove('on');
       voice.rec = null;
       if (!voice.open) return;
-      const text = (voice.final || voice.heard).trim();
+      const text = (voice.heard || voice.final).trim();
       if (text && !VOICE_ERR[voice.error]) { const cb = voice.onText; closeVoice(); cb(text); return; }
       $('#v-hint').textContent = VOICE_ERR[voice.error] || '聞き取れませんでした。マイクを押してもう一度話してください';
     };
@@ -1114,6 +1350,7 @@
 
   function closeVoice() {
     voice.open = false;
+    clearTimeout(voice.silence);
     if (voice.rec) { try { voice.rec.abort(); } catch {} voice.rec = null; }
     $('#voice').hidden = true;
     if ($('#sheet').hidden) $('#sheet-bg').hidden = true;
@@ -1181,6 +1418,7 @@
         if (resp.error) { toast('ログインできませんでした'); return; }
         state.token = resp.access_token;
         state.tasksOk = /auth\/tasks/.test(resp.scope || '');
+        state.authLost = false; state.stale = null;
         store.set('token', { v: resp.access_token, exp: Date.now() + (resp.expires_in - 60) * 1000, scope: resp.scope || '' });
         $('#login').hidden = true;
         await startGoogle();
@@ -1196,7 +1434,13 @@
       await fetchCalendars();
       await load();
       refreshCorpus(); // 候補用。裏で読み込む
-    } catch (err) { handleError(err); }
+      syncDict();
+    } catch (err) {
+      if (err && err.auth) { handleError(err); return; }
+      // 電波がないときは、保存済みのカレンダーと予定で表示する
+      state.calendars = store.get('calCache', []);
+      if (!loadCached()) toast('読み込めませんでした。通信を確認してください');
+    }
   }
 
   function startDemo() {
@@ -1208,13 +1452,22 @@
 
   function logout() {
     if (state.token && window.google) google.accounts.oauth2.revoke(state.token, () => {});
-    store.del('token'); store.del('corpus'); corpus = null;
-    state.token = null; state.events = []; state.tasks = []; state.calendars = [];
+    ['token', 'corpus', 'evCache', 'taskCache', 'calCache'].forEach((k) => store.del(k)); corpus = null;
+    state.token = null; state.events = []; state.tasks = []; state.calendars = []; state.authLost = false; state.stale = null;
     closeSheet(); render(); showLogin();
   }
 
+  // 接続が切れても画面は閉じない。保存済みの予定を出して「再接続」を案内する
+  function connectionLost() {
+    store.del('token'); state.token = null; state.authLost = true;
+    if (!state.calendars.length) state.calendars = store.get('calCache', []);
+    if (!state.calendars.length) { showLogin(); return; }
+    if ($('#sheet').hidden) loadCached(); else renderConn(); // 入力中の画面は残す
+    toast('接続が切れました。「再接続」を押してください');
+  }
+
   function handleError(err) {
-    if (err && err.auth) { store.del('token'); state.token = null; toast('ログインし直してください'); showLogin(); return; }
+    if (err && err.auth) { connectionLost(); return; }
     console.error(err);
     toast(err && err.message ? err.message : '読み込みに失敗しました');
   }
@@ -1246,6 +1499,7 @@
     $('#btn-today').onclick = goToday;
     $('#title').onclick = goToday;
     $('#btn-menu').onclick = openMenu;
+    $('#btn-search').onclick = openSearch;
     $('#sheet-bg').onclick = () => { closeVoice(); closeSheet(); };
     $('#btn-login').onclick = () => tokenClient && tokenClient.requestAccessToken({ prompt: '' });
     $('#btn-demo').onclick = startDemo;
@@ -1275,7 +1529,29 @@
     }, { passive: true });
   }
 
+  // ---------- 開きっぱなしから戻ってきたとき ----------
+  let lastActive = Date.now(), lastDay = ymd(new Date());
+  function onResume() {
+    const busy = !$('#sheet').hidden || !$('#voice').hidden || document.activeElement === $('#intext');
+    if (ymd(new Date()) !== lastDay) { // 日付が変わっていたら「今日」も動かす
+      if (state.anchor && ymd(state.anchor) === lastDay && !busy) { state.anchor = startOfDay(new Date()); state.scrollTop = null; }
+      lastDay = ymd(new Date());
+    } else if (Date.now() - lastActive < 60000) return;
+    lastActive = Date.now();
+    if (busy) return; // 入力中は邪魔しない
+    checkNewVersion();
+    const saved = store.get('token', null);
+    if (state.token && saved && saved.exp <= Date.now()) { connectionLost(); return; }
+    load();
+    refreshCorpus();
+    syncDict();
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') onResume(); else lastActive = Date.now(); });
+  window.addEventListener('online', () => { if (state.token) load(); });
+  window.addEventListener('offline', () => renderConn());
+
   // ---------- 起動 ----------
+  if ('serviceWorker' in navigator && !location.pathname.includes('_t')) navigator.serviceWorker.register('sw.js').catch((err) => console.warn(err));
   checkNewVersion();
   applyTheme();
   bind();
@@ -1285,7 +1561,9 @@
     startDemo();
   } else {
     const saved = store.get('token', null);
+    const calCache = store.get('calCache', []);
     if (saved && saved.exp > Date.now()) { state.token = saved.v; state.tasksOk = /auth\/tasks/.test(saved.scope || ''); startGoogle(); }
+    else if (calCache.length) { state.calendars = calCache; state.authLost = true; loadCached(); } // 切れていても前回の予定は見せる
     else showLogin();
   }
 })();

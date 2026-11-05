@@ -328,3 +328,26 @@ body{-webkit-font-smoothing:antialiased;letter-spacing:.01em}
 .sugg{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:7px 0 8px 82px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted)}
 .sugg span{font-weight:700}
 .sugg button{padding:5px 10px;border-radius:999px;background:var(--soft);color:var(--link);font-size:14px;font-weight:700;text-align:left}
+
+/* 接続が切れた・電波がないときの案内 */
+.conn-bar{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--warn-fg);background:var(--warn-bg);border-radius:8px;padding:4px 6px 4px 10px}
+.conn-bar span{flex:1;min-width:0}
+.conn-bar button{flex:none;padding:5px 12px;border-radius:7px;background:var(--accent);color:var(--on-accent);font-weight:700}
+/* 元に戻す */
+.undo-bar{position:absolute;left:10px;right:10px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:9;background:var(--toast-bg);color:var(--toast-fg);border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:10px;font-size:14px;box-shadow:var(--shadow-md)}
+.undo-bar span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.undo-bar button{flex:none;font-weight:700;color:var(--toast-fg);text-decoration:underline}
+/* 祝日 */
+.dh.holiday b,.mc.holiday .num{color:var(--sun)}
+.mc.holiday.out .num{color:var(--out-fg)}
+html[data-theme] .dh.today.holiday b{color:var(--on-today)}
+/* メモ・リスト名・検索 */
+.sheet .row .memo{white-space:pre-wrap;overflow-wrap:anywhere;min-width:0}
+.tk-title small{margin-left:6px;font-size:11px;color:var(--muted);font-weight:500}
+.search-input{width:100%;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--field);padding:0 12px;font-size:16px;color:var(--fg);color-scheme:var(--scheme);margin-bottom:6px}
+.search-res{list-style:none;margin:0;padding:0;min-height:120px}
+.search-res li{display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line2);cursor:pointer}
+.search-res .dp-time{width:64px;text-align:left}
+
+/* 狭い画面で見出しが欠けないように */
+@media (max-width:400px){.title{font-size:23px}.nav .icon-btn{width:32px}}

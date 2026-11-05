@@ -15,9 +15,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Klee+One:wght@400;600&family=Shippori+Mincho:wght@600;700&family=Zen+Maru+Gothic:wght@500;700&display=swap">
-<link rel="stylesheet" href="style.css?v=202611051246">
-<link rel="stylesheet" href="themes.css?v=202611051246">
-<link rel="stylesheet" href="techo.css?v=202611051246">
+<link rel="stylesheet" href="style.css?v=202611051259">
+<link rel="stylesheet" href="themes.css?v=202611051259">
+<link rel="stylesheet" href="techo.css?v=202611051259">
 <script>
   // 画面が出る前にテーマを当てる（ちらつき防止）
   (function () {
@@ -36,6 +36,7 @@
         <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
       </button>
       <button class="title" id="title" aria-label="今日に戻る"></button>
+      <button class="icon-btn" id="btn-search" aria-label="検索"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg></button>
       <div class="nav">
         <button class="icon-btn" id="btn-prev" aria-label="前へ"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
         <button class="today-btn" id="btn-today">今日</button>
@@ -48,6 +49,7 @@
       <button data-view="month" role="tab">月</button>
     </div>
     <div class="demo-banner" id="demo-banner" hidden>お試し表示中（ダミーの予定です）</div>
+    <div class="conn-bar" id="conn-bar" hidden></div>
   </header>
 
   <main id="view" class="view"></main>
@@ -90,9 +92,9 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script src="config.js?v=202611051246"></script>
-<script src="parse.js?v=202611051246"></script>
-<script src="app.js?v=202611051246"></script>
+<script src="config.js?v=202611051259"></script>
+<script src="parse.js?v=202611051259"></script>
+<script src="app.js?v=202611051259"></script>
 <script src="https://accounts.google.com/gsi/client" async onload="window.onGsiLoaded && window.onGsiLoaded()"></script>
 </body>
 </html>
