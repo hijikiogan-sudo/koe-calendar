@@ -252,8 +252,8 @@ body{-webkit-font-smoothing:antialiased;letter-spacing:.01em}
 .mg-head{font-weight:700;font-size:10.5px;letter-spacing:.05em;border-bottom:0}
 .mc{border-right-color:var(--line2);border-bottom-color:var(--line2);padding:3px 2px;gap:2px}
 .mc .num{font-weight:700;font-size:12.5px;width:22px;height:22px;line-height:22px}
-.mg-head div:first-child,.mc:nth-child(7n+1) .num{color:var(--sun)}
-.mg-head div:last-child,.mc:nth-child(7n) .num{color:var(--sat)}
+.mg-head .sun,.mc.sun .num{color:var(--sun)}
+.mg-head .sat,.mc.sat .num{color:var(--sat)}
 .mc.today .num{color:var(--on-today)}
 .mc.out .num{color:var(--out-fg)}
 
@@ -351,3 +351,25 @@ html[data-theme] .dh.today.holiday b{color:var(--on-today)}
 
 /* 狭い画面で見出しが欠けないように */
 @media (max-width:400px){.title{font-size:23px}.nav .icon-btn{width:32px}}
+
+/* メニュー：項目ごとに畳む */
+.mgroup{border-bottom:1px solid var(--line)}
+.mgroup summary{list-style:none;cursor:pointer;padding:13px 2px;font-weight:700;font-size:16px;display:flex;align-items:center;justify-content:space-between}
+.mgroup summary::-webkit-details-marker{display:none}
+.mgroup summary::after{content:"›";font-size:22px;line-height:1;color:var(--muted);transition:transform .15s}
+.mgroup[open] summary::after{transform:rotate(90deg)}
+.mbody{padding:0 2px 14px}
+.fl.wide{width:auto;flex:1;white-space:normal}
+.mbody .f select{flex:0 1 auto;max-width:58%}
+.cal-set{padding:6px 0 8px;border-bottom:1px solid var(--line2)}
+.sheet .cal-set .cal{border-bottom:0;padding:6px 0}
+.swatches{display:flex;flex-wrap:wrap;gap:6px;padding-left:28px}
+.swatches button{width:26px;height:26px;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.08)}
+.swatches button.on{box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--fg)}
+.swatches .reset{background:var(--soft);font-size:11px;font-weight:700;color:var(--muted)}
+/* 予定の文字サイズ */
+html[data-size=small] .ev,html[data-size=small] .tg.narrow .ev,html[data-size=small] .chip{font-size:9.5px}
+html[data-size=small] .mc .m-ev{font-size:9px}
+html[data-size=large] .ev{font-size:13.5px}
+html[data-size=large] .tg.narrow .ev,html[data-size=large] .chip{font-size:12.5px}
+html[data-size=large] .mc .m-ev{font-size:11.5px}

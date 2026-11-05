@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '202611051259'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
+  const APP_VERSION = '202611051304'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
   const SCOPES = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/tasks';
   const API = 'https://www.googleapis.com/calendar/v3';
   const WD = ['日', '月', '火', '水', '木', '金', '土'];
@@ -15,8 +15,18 @@
     del(k) { try { localStorage.removeItem(k); } catch {} },
   };
 
+  // 設定（この端末に保存）
+  const cfg = (k, d) => store.get(`cfg.${k}`, d);
+  const setCfg = (k, v) => store.set(`cfg.${k}`, v);
+  const CAL_COLORS = ['#d9534f', '#e8833a', '#d4a72c', '#4b9e5f', '#2a9d8f', '#3b7ddd', '#6a5acd', '#c0628a', '#7a6a58'];
+  function applyCalColors(cals) {
+    const colors = cfg('calColors', {});
+    cals.forEach((c) => { c.baseColor = c.baseColor || c.color; c.color = colors[c.id] || c.baseColor; });
+    return cals;
+  }
+
   const state = {
-    view: store.get('view', 'week'),
+    view: cfg('startView', 'last') === 'last' ? store.get('view', 'week') : cfg('startView', 'last'),
     anchor: startOfDay(new Date()),
     demo: false,
     token: null,
@@ -44,9 +54,10 @@
 
   function range(view = state.view, a = state.anchor) {
     if (view === 'day') return [a, addDays(a, 1)];
-    if (view === 'week') { const s = addDays(a, -a.getDay()); return [s, addDays(s, 7)]; }
+    const ws = cfg('weekStart', 0); // 0=日曜 1=月曜
+    if (view === 'week') { const s = addDays(a, -((a.getDay() - ws + 7) % 7)); return [s, addDays(s, 7)]; }
     const first = new Date(a.getFullYear(), a.getMonth(), 1);
-    const s = addDays(first, -first.getDay());
+    const s = addDays(first, -((first.getDay() - ws + 7) % 7));
     return [s, addDays(s, 42)];
   }
 
@@ -71,7 +82,8 @@
     else {
       const [s] = range(); const today = startOfDay(new Date());
       const showsToday = Array.from({ length: n }, (_, i) => addDays(s, i)).some((d) => sameDay(d, today));
-      scroll.scrollTop = (showsToday ? Math.max(new Date().getHours() - 2, 0) : 8) * HOUR;
+      const sh = cfg('startHour', 'now');
+      scroll.scrollTop = (sh !== 'now' ? Number(sh) : showsToday ? Math.max(new Date().getHours() - 2, 0) : 8) * HOUR;
     }
     scroll.dataset.init = '1';
   }
@@ -192,16 +204,19 @@
     const m = state.anchor.getMonth();
     const root = el('div', 'mg');
     const head = el('div', 'mg-head');
-    WD.forEach((w) => head.appendChild(Object.assign(el('div'), { textContent: w })));
+    for (let i = 0; i < 7; i++) {
+      const dow = (i + cfg('weekStart', 0)) % 7;
+      head.appendChild(Object.assign(el('div', dow === 0 ? 'sun' : dow === 6 ? 'sat' : ''), { textContent: WD[dow] }));
+    }
     root.appendChild(head);
     const body = el('div', 'mg-body');
     for (let i = 0; i < 42; i++) {
       const d = addDays(s, i);
-      const cell = el('button', 'mc' + (d.getMonth() !== m ? ' out' : '') + (sameDay(d, today) ? ' today' : '') + (state.holidays.has(ymd(d)) ? ' holiday' : ''));
+      const cell = el('button', 'mc' + (d.getDay() === 0 ? ' sun' : d.getDay() === 6 ? ' sat' : '') + (d.getMonth() !== m ? ' out' : '') + (sameDay(d, today) ? ' today' : '') + (state.holidays.has(ymd(d)) ? ' holiday' : ''));
       cell.appendChild(Object.assign(el('div', 'num'), { textContent: d.getDate() }));
       const evs = eventsOn(d).sort((a, b) => (b.allDay - a.allDay) || (a.start - b.start))
         .concat(state.tasks.filter((t) => t.due && sameDay(t.due, d)).map((t) => ({ task: true, title: t.title })));
-      const max = 3;
+      const max = cfg('monthMax', 3);
       evs.slice(0, evs.length > max ? max - 1 : max).forEach((ev) => {
         const x = el('div', 'm-ev ' + (ev.task ? 'task' : ev.allDay ? 'allday' : 'timed'));
         if (!ev.task) { x.style.setProperty('--c', ev.color); x.style.setProperty('--ct', ev.text || '#fff'); }
@@ -405,6 +420,7 @@
     const dark = m === 'dark' || (m === 'auto' && darkMQ.matches);
     document.documentElement.dataset.theme = THEMES.some((x) => x.id === t) ? t : DEFAULT_THEME;
     document.documentElement.dataset.scheme = dark ? 'dark' : 'light';
+    document.documentElement.dataset.size = cfg('textSize', 'normal');
     const css = getComputedStyle(document.documentElement);
     const meta = document.querySelector('meta[name=theme-color]');
     if (meta) meta.content = (css.getPropertyValue('--head-bg') || css.getPropertyValue('--bg')).trim();
@@ -482,42 +498,77 @@
     box.querySelector('.yes').onclick = () => { clearTimeout(timer); addDict(p.from, p.to); box.remove(); toast(`辞書に登録：${p.from} → ${p.to}`); };
   }
 
+  const menuOpen = new Set();
   function openMenu() {
-    const cals = state.calendars.map((c) =>
-      `<button class="cal ${state.hidden.has(c.id) ? '' : 'on'}" data-id="${esc(c.id)}" style="--c:${c.color}"><i></i>${esc(c.name)}</button>`).join('');
     const theme = store.get('theme', DEFAULT_THEME), mode = store.get('mode', 'auto');
     const dict = getDict();
+    const colors = cfg('calColors', {});
+    const cals = state.calendars.map((c) => `<div class="cal-set">
+      <button class="cal ${state.hidden.has(c.id) ? '' : 'on'}" data-id="${esc(c.id)}" style="--c:${c.color}"><i></i>${esc(c.name)}</button>
+      <div class="swatches" data-id="${esc(c.id)}">${CAL_COLORS.map((col) => `<button style="background:${col}" data-c="${col}" class="${colors[c.id] === col ? 'on' : ''}" aria-label="色を変える"></button>`).join('')}
+        <button class="reset ${colors[c.id] ? '' : 'on'}" data-c="" aria-label="Googleの色に戻す">元</button></div>
+    </div>`).join('');
+    const sel = (key, def, opts) => `<select class="cfg" data-k="${key}">${opts.map(([v, l]) => `<option value="${esc(v)}" ${String(cfg(key, def)) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+    const row = (label, ctrl) => `<label class="f"><span class="fl wide">${label}</span>${ctrl}</label>`;
+    const group = (id, title, body) => `<details class="mgroup" data-g="${id}" ${menuOpen.has(id) ? 'open' : ''}><summary>${title}</summary><div class="mbody">${body}</div></details>`;
+    const wcals = writableCals().map((c) => [c.id, c.name]);
+    const lists = state.taskLists.map((l) => [l.id, l.title]);
     openSheet(`
       <h2>メニュー</h2>
-      <div class="sec">見た目</div>
-      <div class="themes">${THEMES.map((t) => `<button class="th${t.id === theme ? ' on' : ''}" data-t="${t.id}">
-        <span class="sw3">${t.sw.map((c) => `<i style="background:${c}"></i>`).join('')}</span>${t.name}</button>`).join('')}</div>
-      <div class="modes" style="margin-top:8px">${MODES.map((m) => `<button data-m="${m.id}" class="${m.id === mode ? 'on' : ''}">${m.name}</button>`).join('')}</div>
-      <p class="note" style="margin-top:6px">「自動」は iPhone の設定（ライト／ダーク）に合わせます。</p>
-
-      <div class="sec">辞書（こう聞き取られたら → こう書く）</div>
-      <ul class="dict">${dict.map((d, i) => `<li><span class="from">${esc(d.from)}</span><span class="arrow">→</span><span class="to">${esc(d.to)}</span>
-        <button class="del" data-i="${i}" aria-label="削除">×</button></li>`).join('') || '<li class="dict-empty">まだありません。例：「サーフ会議」→「スタッフ会議」</li>'}</ul>
-      <form class="dict-add" id="dict-form">
-        <input id="dict-from" placeholder="実際に出る字（隆、高）" autocomplete="off">
-        <span>→</span>
-        <input id="dict-to" placeholder="書きたい表記" autocomplete="off">
-        <button>追加</button>
-      </form>
-
-      <p class="note" style="margin-top:6px">iPhoneは「たかし」を「隆」などの漢字で書き起こします。確認画面に出た字を登録してください。「、」で区切ると複数まとめて登録できます。Google ToDoの「Koe設定」リストを使って、iPhoneとパソコンで共有します。</p>
-
-      <div class="sec">もしかしての候補</div>
-      <p class="note" style="margin-top:0" id="m-corpus"></p>
-      <button class="act" id="m-corpus-reload" style="margin-top:6px">候補を読み直す</button>
-
-      <div class="sec">表示するカレンダー</div>
-      ${cals}
-      ${state.demo
-        ? (cfgClientId() ? '<button class="act" id="m-login">Googleでログインする</button>' : '<p class="note">Googleとつなぐには config.js にクライアントIDを設定します（SETUP.md 参照）。</p>')
-        : '<button class="act" id="m-logout">ログアウト</button>'}
-      <p class="note">Koe ・ 版 ${APP_VERSION}</p>`);
+      ${group('look', '見た目', `
+        <div class="themes">${THEMES.map((t) => `<button class="th${t.id === theme ? ' on' : ''}" data-t="${t.id}">
+          <span class="sw3">${t.sw.map((c) => `<i style="background:${c}"></i>`).join('')}</span>${t.name}</button>`).join('')}</div>
+        <div class="modes" style="margin-top:8px">${MODES.map((m) => `<button data-m="${m.id}" class="${m.id === mode ? 'on' : ''}">${m.name}</button>`).join('')}</div>
+        <p class="note" style="margin-top:6px">「自動」は iPhone の設定（ライト／ダーク）に合わせます。</p>
+        ${row('予定の文字', sel('textSize', 'normal', [['small', '小'], ['normal', '標準'], ['large', '大']]))}`)}
+      ${group('view', '表示', `
+        ${row('起動時の画面', sel('startView', 'last', [['last', '前回の画面'], ['day', '日'], ['week', '週'], ['month', '月']]))}
+        ${row('週の始まり', sel('weekStart', 0, [[0, '日曜'], [1, '月曜']]))}
+        ${row('最初に見せる時刻', sel('startHour', 'now', [['now', '今の時刻の近く'], [6, '6時'], [7, '7時'], [8, '8時'], [9, '9時']]))}
+        ${row('月の1マスの件数', sel('monthMax', 3, [[2, '2件'], [3, '3件'], [4, '4件'], [5, '5件']]))}`)}
+      ${group('cal', 'カレンダーと色', cals)}
+      ${group('input', '入力の標準', `
+        ${wcals.length ? row('標準のカレンダー', sel('defCal', '', [['', '自動（自分用）'], ...wcals])) : ''}
+        ${lists.length > 1 ? row('標準のToDoリスト', sel('defList', '', [['', '自動（先頭のリスト）'], ...lists])) : ''}
+        ${row('標準の通知', sel('defRemind', '', REMINDS.map((r) => [r.v, r.label])))}
+        ${row('時刻のない文', sel('noTimeKind', 'task', [['task', 'タスクにする'], ['event', '終日の予定にする']]))}
+        <p class="note" style="margin-top:6px">「までに」「買う」などがある文は、ここの設定に関係なくタスクになります。</p>`)}
+      ${group('dict', `辞書（${dict.length}件）`, `
+        <ul class="dict">${dict.map((d, i) => `<li><span class="from">${esc(d.from)}</span><span class="arrow">→</span><span class="to">${esc(d.to)}</span>
+          <button class="del" data-i="${i}" aria-label="削除">×</button></li>`).join('') || '<li class="dict-empty">まだありません。例：「サーフ会議」→「スタッフ会議」</li>'}</ul>
+        <form class="dict-add" id="dict-form">
+          <input id="dict-from" placeholder="実際に出る字（隆、高）" autocomplete="off">
+          <span>→</span>
+          <input id="dict-to" placeholder="書きたい表記" autocomplete="off">
+          <button>追加</button>
+        </form>
+        <p class="note" style="margin-top:6px">iPhoneは「たかし」を「隆」などの漢字で書き起こします。確認画面に出た字を登録してください。「、」で区切ると複数まとめて登録できます。Google ToDoの「Koe設定」リストを使って、iPhoneとパソコンで共有します。</p>`)}
+      ${group('sync', '同期とアカウント', `
+        <p class="note" style="margin-top:0">${state.demo ? 'お試し表示中です。' : state.token ? 'Googleに接続中です。開いたときと、アプリに戻ったときに自動で更新します。' : 'Googleとの接続が切れています。'}</p>
+        <p class="note" style="margin-top:4px">もしかしての候補：<span id="m-corpus"></span></p>
+        <button class="act" id="m-corpus-reload" style="margin-top:6px">今すぐ更新</button>
+        ${state.demo
+          ? (cfgClientId() ? '<button class="act" id="m-login">Googleでログインする</button>' : '<p class="note">Googleとつなぐには config.js にクライアントIDを設定します（SETUP.md 参照）。</p>')
+          : '<button class="act" id="m-logout">ログアウト</button>'}`)}
+      <p class="note">Koe ・ 版 ${APP_VERSION}<br>設定はこの端末に保存します（辞書だけ共有）。</p>`);
     const sh = $('#sheet');
+    sh.querySelectorAll('.mgroup').forEach((d) => d.addEventListener('toggle', () => { if (d.open) menuOpen.add(d.dataset.g); else menuOpen.delete(d.dataset.g); }));
+    sh.querySelectorAll('select.cfg').forEach((x) => x.onchange = () => {
+      const k = x.dataset.k;
+      const v = ['weekStart', 'monthMax'].includes(k) ? Number(x.value) : x.value;
+      setCfg(k, v);
+      if (k === 'textSize') applyTheme();
+      if (['weekStart', 'monthMax', 'startHour'].includes(k)) { state.scrollTop = null; load(); }
+    });
+    sh.querySelectorAll('.swatches button').forEach((b) => b.onclick = () => {
+      const id = b.parentElement.dataset.id, cur = cfg('calColors', {});
+      if (b.dataset.c) cur[id] = b.dataset.c; else delete cur[id];
+      setCfg('calColors', cur);
+      applyCalColors(state.calendars);
+      store.set('calCache', state.calendars);
+      const top = sh.scrollTop; openMenu(); $('#sheet').scrollTop = top;
+      load();
+    });
     sh.querySelectorAll('.th').forEach((b) => b.onclick = () => {
       store.set('theme', b.dataset.t); applyTheme();
       sh.querySelectorAll('.th').forEach((x) => x.classList.toggle('on', x === b));
@@ -555,8 +606,9 @@
     $('#m-corpus-reload').onclick = async () => {
       if (state.demo) { toast('お試し表示では読み直せません'); return; }
       const run = refreshCorpus(true); showCorpus();
+      load(); syncDict();
       await run; showCorpus();
-      toast(corpusStatus || '候補を読み直しました');
+      toast(corpusStatus || '更新しました');
     };
     const lo = $('#m-logout'); if (lo) lo.onclick = logout;
     const li = $('#m-login'); if (li) li.onclick = () => { closeSheet(); state.demo = false; showLogin(); };
@@ -567,6 +619,7 @@
     const id = ++state.reqId;
     const [s, e] = range();
     if (state.demo) {
+      demoEvents().forEach((ev) => { const c = state.calendars.find((x) => x.id === ev.calId); if (c) ev.color = c.color; });
       state.events = demoEvents().filter((ev) => !state.hidden.has(ev.calId) && ev.start < e && ev.end > s);
       state.tasks = demoTaskList().slice();
       state.taskLists = DEMO_LISTS;
@@ -617,7 +670,7 @@
       state.tasks = (tc.tasks || []).map((t) => ({ ...t, due: t.due ? new Date(t.due) : null }));
       state.taskLists = tc.lists || [];
     }
-    state.events = hit ? hit.ev.map((ev) => ({ ...ev, start: new Date(ev.start), end: new Date(ev.end) })).filter((ev) => !state.hidden.has(ev.calId)) : [];
+    state.events = hit ? hit.ev.map((ev) => ({ ...ev, start: new Date(ev.start), end: new Date(ev.end), color: (state.calendars.find((c) => c.id === ev.calId) || ev).color })).filter((ev) => !state.hidden.has(ev.calId)) : [];
     state.holidays = new Map(hit ? hit.hol : []);
     state.stale = hit ? hit.at : -1;
     render();
@@ -673,6 +726,7 @@
       id: c.id, name: c.summaryOverride || c.summary, color: c.backgroundColor || '#2f5d8a', text: c.foregroundColor || '#fff', primary: !!c.primary,
       writable: c.accessRole === 'owner' || c.accessRole === 'writer',
     })).sort((a, b) => b.primary - a.primary);
+    applyCalColors(state.calendars);
     if (!state.hiddenSaved) {
       (data.items || []).forEach((c) => { if (c.selected === false) state.hidden.add(c.id); });
     }
@@ -751,6 +805,7 @@
     { v: '', label: '繰り返さない' }, { v: 'DAILY', label: '毎日' }, { v: 'WEEKDAYS', label: '平日のみ' }, { v: 'WEEKLY', label: '毎週' },
     { v: 'BIWEEKLY', label: '隔週' }, { v: 'MONTHLY', label: '毎月' }, { v: 'YEARLY', label: '毎年' },
   ];
+  const defaultList = (id) => id || (state.taskLists.some((l) => l.id === cfg('defList', '')) ? cfg('defList', '') : state.taskLists[0] && state.taskLists[0].id);
   const writableCals = () => state.calendars.filter((c) => c.writable);
 
   // v: {kind,calId,title,date,noDue,allDay,start,end,location,remind,spanDays}
@@ -793,7 +848,7 @@
       ${v.endDays && !v.allDay ? `<p class="note ev-only" style="margin:4px 0 0;text-align:right">終わりは ${v.endDays}日後（${md(addDays(v.date || startOfDay(new Date()), v.endDays))}）の上記の時刻です</p>` : ''}
       ${v.spanDays > 1 ? `<p class="note ev-only" style="margin:4px 0 0;text-align:right">${v.spanDays}日間（〜${md(addDays(v.date, v.spanDays - 1))}）の終日予定です</p>` : ''}
       ${opt.allowRecur ? `<label class="f ev-only"><span class="fl">繰り返し</span><select id="c-recur">${RECURS.map((r) => `<option value="${r.v}" ${r.v === (v.recur || '') ? 'selected' : ''}>${r.label}</option>`).join('')}</select></label>` : ''}
-      ${!opt.fixedKind && state.taskLists.length > 1 ? `<div class="f task-only"><span class="fl">リスト</span><div class="cal-chips">${state.taskLists.map((l) => `<button type="button" class="cc lc${l.id === (v.listId || state.taskLists[0].id) ? ' on' : ''}" data-id="${esc(l.id)}" style="--c:var(--task);--ct:var(--on-task)">${esc(l.title)}</button>`).join('')}</div></div>` : ''}
+      ${!opt.fixedKind && state.taskLists.length > 1 ? `<div class="f task-only"><span class="fl">リスト</span><div class="cal-chips">${state.taskLists.map((l) => `<button type="button" class="cc lc${l.id === defaultList(v.listId) ? ' on' : ''}" data-id="${esc(l.id)}" style="--c:var(--task);--ct:var(--on-task)">${esc(l.title)}</button>`).join('')}</div></div>` : ''}
       <label class="f ev-only${ch('location')}"><span class="fl">場所</span><input id="c-loc" value="${esc(v.location || '')}" placeholder="なし"></label>
       <div class="sugg ev-only" id="s-loc" hidden></div>
       <label class="f ev-only${ch('remind')}"><span class="fl">通知</span><select id="c-remind">${reminds.map((r) =>
@@ -820,7 +875,7 @@
       calId = b.dataset.id;
       sh.querySelectorAll('.cc:not(.lc)').forEach((x) => x.classList.toggle('on', x === b));
     });
-    let listId = v.listId || (state.taskLists[0] && state.taskLists[0].id);
+    let listId = defaultList(v.listId);
     sh.querySelectorAll('.cc.lc').forEach((b) => b.onclick = () => {
       listId = b.dataset.id;
       sh.querySelectorAll('.cc.lc').forEach((x) => x.classList.toggle('on', x === b));
@@ -994,6 +1049,8 @@
     const cals = writableCals();
     if (!cals.length) { toast('書き込めるカレンダーがありません'); return; }
     const p = window.KoeParse.parse(text, { calendars: cals });
+    if (!p.calSaid && cals.some((c) => c.id === cfg('defCal', ''))) p.calId = cfg('defCal', '');
+    if (p.kind === 'task' && !p.taskWord && cfg('noTimeKind', 'task') === 'event') p.kind = 'event'; // 時刻のない文の扱い
     p.title = applyDictField(p.title); p.location = applyDictField(p.location);
     // 過去に予定として使った言葉（に近いもの）は、時刻がなくても終日の予定にする
     if (p.kind === 'task' && !p.taskWord && p.title) {
@@ -1007,7 +1064,7 @@
     openForm({
       kind: p.kind, calId: p.calId, title: p.title, date: p.date, noDue: p.kind === 'task' && !p.dateSaid && !slot,
       allDay: p.allDay, start: p.start, end: p.end,
-      location: p.location, remind: p.remind ? String(p.remind.minutes) : '', remindLabel: p.remind && p.remind.label,
+      location: p.location, remind: p.remind ? String(p.remind.minutes) : cfg('defRemind', ''), remindLabel: p.remind && p.remind.label,
       spanDays: p.spanDays, recur: p.recur ? p.recur.freq : '', monthEnd: !!(p.recur && p.recur.monthEnd),
       listId: (p.calSaid && state.taskLists.find((l) => { const c = cals.find((x) => x.id === p.calId); return c && (c.name.includes(l.title) || l.title.includes(c.name)); }) || {}).id,
     }, {
@@ -1445,7 +1502,7 @@
 
   function startDemo() {
     state.demo = true;
-    state.calendars = DEMO_CALS;
+    state.calendars = applyCalColors(DEMO_CALS);
     $('#login').hidden = true;
     load();
   }
@@ -1563,7 +1620,7 @@
     const saved = store.get('token', null);
     const calCache = store.get('calCache', []);
     if (saved && saved.exp > Date.now()) { state.token = saved.v; state.tasksOk = /auth\/tasks/.test(saved.scope || ''); startGoogle(); }
-    else if (calCache.length) { state.calendars = calCache; state.authLost = true; loadCached(); } // 切れていても前回の予定は見せる
+    else if (calCache.length) { state.calendars = applyCalColors(calCache); state.authLost = true; loadCached(); } // 切れていても前回の予定は見せる
     else showLogin();
   }
 })();
