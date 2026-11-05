@@ -11,7 +11,7 @@ html[data-theme=techo-green]   { --cover:#2f4a3c; --cover-deep:#21362b; }
 html[data-theme^=techo][data-scheme=dark]{ --cover:var(--cover-deep); }
 
 /* ---- 紙とインク ---- */
-html[data-theme^=techo]{
+html[data-book]{
   --font:"Klee One","Hiragino Maru Gothic ProN","Hiragino Sans",sans-serif;
   --font-head:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif;
   --font-num:"Shippori Mincho","Hiragino Mincho ProN",serif;
@@ -45,30 +45,30 @@ html[data-theme^=techo][data-scheme=dark]{
 }
 
 /* ---- 表紙（上の帯と下の入力欄のまわり） ---- */
-html[data-theme^=techo] body{background:var(--cover-deep)}
-html[data-theme^=techo] #app{background:var(--cover) var(--noise);background-blend-mode:soft-light}
-html[data-theme^=techo] .top{background:transparent;position:relative;padding-bottom:16px}
-html[data-theme^=techo] .top::before{ /* 表紙のステッチ */
+html[data-book] body{background:var(--cover-deep)}
+html[data-book] #app{background:var(--cover) var(--noise);background-blend-mode:soft-light}
+html[data-book] .top{background:transparent;position:relative;padding-bottom:16px}
+html[data-book] .top::before{ /* 表紙のステッチ */
   content:"";position:absolute;left:8px;right:8px;top:calc(env(safe-area-inset-top) * 0 + 3px);border-top:1.5px dashed rgba(233,207,143,.35);pointer-events:none}
-html[data-theme^=techo] .title{font-family:var(--font-head);color:var(--foil);text-shadow:0 1px 0 rgba(0,0,0,.35)}
-html[data-theme^=techo] .seg{background:rgba(0,0,0,.18)}
-html[data-theme^=techo] .seg button{color:rgba(233,207,143,.75);font-family:var(--font-head)}
-html[data-theme^=techo] .seg button.on{background:var(--bg);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.25)}
-html[data-theme^=techo] .demo-banner{background:rgba(0,0,0,.2);color:var(--foil)}
+html[data-book] .title{font-family:var(--font-head);color:var(--foil);text-shadow:0 1px 0 rgba(0,0,0,.35)}
+html[data-book] .seg{background:rgba(0,0,0,.18)}
+html[data-book] .seg button{color:rgba(233,207,143,.75);font-family:var(--font-head)}
+html[data-book] .seg button.on{background:var(--bg);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.25)}
+html[data-book] .demo-banner{background:rgba(0,0,0,.2);color:var(--foil)}
 
 /* ---- 紙のページ ---- */
-html[data-theme^=techo] .view,
-html[data-theme^=techo] .tasks{margin:0 8px;background:var(--bg);position:relative}
-html[data-theme^=techo] .view{border-radius:6px 6px 0 0;box-shadow:0 -1px 0 rgba(0,0,0,.08)}
-html[data-theme^=techo] .tasks{border-radius:0 0 6px 6px;box-shadow:0 6px 14px rgba(0,0,0,.25);border-top:1.5px solid var(--rule)}
-html[data-theme^=techo] .view::after,
-html[data-theme^=techo] .tasks::after{ /* 紙の質感 */
+html[data-book] .view,
+html[data-book] .tasks{margin:0 8px;background:var(--bg);position:relative}
+html[data-book] .view{border-radius:6px 6px 0 0;box-shadow:0 -1px 0 rgba(0,0,0,.08)}
+html[data-book] .tasks{border-radius:0 0 6px 6px;box-shadow:0 6px 14px rgba(0,0,0,.25);border-top:1.5px solid var(--rule)}
+html[data-book] .view::after,
+html[data-book] .tasks::after{ /* 紙の質感 */
   content:"";position:absolute;inset:0;background:var(--noise);opacity:.05;mix-blend-mode:multiply;pointer-events:none;z-index:4;border-radius:inherit}
-html[data-theme^=techo][data-scheme=dark] .view::after,
-html[data-theme^=techo][data-scheme=dark] .tasks::after{mix-blend-mode:screen;opacity:.04}
+html[data-book][data-scheme=dark] .view::after,
+html[data-book][data-scheme=dark] .tasks::after{mix-blend-mode:screen;opacity:.04}
 
 /* リング綴じ（表紙と紙の境目） */
-html[data-theme^=techo] .top::after{
+html[data-book] .top::after{
   content:"";position:absolute;left:22px;right:22px;bottom:-9px;height:22px;z-index:6;pointer-events:none;
   background:
     radial-gradient(circle at 50% 72%, rgba(0,0,0,.45) 0 3.2px, transparent 3.8px) 0 0/26px 22px repeat-x,
@@ -76,61 +76,66 @@ html[data-theme^=techo] .top::after{
   filter:drop-shadow(0 1px 1px rgba(0,0,0,.35))}
 
 /* ---- 時間軸：罫線・赤い余白線・明朝の数字 ---- */
-html[data-theme^=techo] .tg-head{padding-top:12px;border-bottom:1.5px solid var(--rule)}
-html[data-theme^=techo] .dh{font-family:var(--font);font-weight:600}
-html[data-theme^=techo] .dh b{font-family:var(--font-num);font-size:19px;font-weight:700;border-radius:4px}
-html[data-theme^=techo] .dh.today{color:var(--fg)}
-html[data-theme^=techo] .dh.today b{background:linear-gradient(transparent 52%, var(--marker) 52%, var(--marker) 92%, transparent 92%);color:var(--fg);transform:rotate(-2deg)}
-html[data-theme^=techo] .tg-allday{border-bottom:1.5px solid var(--rule)}
-html[data-theme^=techo] .tg-allday .lbl,
-html[data-theme^=techo] .tg-head > div:first-child{border-right:1.5px solid var(--margin-red)}
-html[data-theme^=techo] .tg-body .hours{border-right:1.5px solid var(--margin-red)}
-html[data-theme^=techo] .hl{font-family:var(--font-num);font-weight:600;font-size:11px}
-html[data-theme^=techo] .dcol{border-left:1px solid var(--rule2);
+html[data-book] .tg-head{padding-top:12px;border-bottom:1.5px solid var(--rule)}
+html[data-book] .dh{font-family:var(--font);font-weight:600}
+html[data-book] .dh b{font-family:var(--font-num);font-size:19px;font-weight:700;border-radius:4px}
+html[data-book] .dh.today{color:var(--fg)}
+html[data-book] .dh.today b{background:linear-gradient(transparent 52%, var(--marker) 52%, var(--marker) 92%, transparent 92%);color:var(--fg);transform:rotate(-2deg)}
+html[data-book] .tg-allday{border-bottom:1.5px solid var(--rule)}
+html[data-book] .tg-allday .lbl,
+html[data-book] .tg-head > div:first-child{border-right:1.5px solid var(--margin-red)}
+html[data-book] .tg-body .hours{border-right:1.5px solid var(--margin-red)}
+html[data-book] .hl{font-family:var(--font-num);font-weight:600;font-size:11px}
+html[data-book] .dcol{border-left:1px solid var(--rule2);
   background-image:
     linear-gradient(var(--rule) 1px, transparent 1px),
     linear-gradient(transparent calc(50% - .5px), var(--rule2) calc(50% - .5px), var(--rule2) calc(50% + .5px), transparent calc(50% + .5px));
   background-size:100% var(--hour),100% var(--hour)}
-html[data-theme^=techo] .tg-row > .dcol:nth-child(2){border-left:0}
-html[data-theme^=techo] .dcol.today{background-color:var(--today-col)}
+html[data-book] .tg-row > .dcol:nth-child(2){border-left:0}
+html[data-book] .dcol.today{background-color:var(--today-col)}
 
 /* 予定：手書き風の文字＋色鉛筆で塗ったような地 */
-html[data-theme^=techo] .ev,
-html[data-theme^=techo] .chip,
-html[data-theme^=techo] .mc .m-ev{font-family:var(--font);font-weight:600}
-html[data-theme^=techo] .ev{border-radius:3px 6px 6px 3px;box-shadow:0 1px 0 rgba(0,0,0,.06)}
+html[data-book] .ev,
+html[data-book] .chip,
+html[data-book] .mc .m-ev{font-family:var(--font);font-weight:600}
+html[data-book] .ev{border-radius:3px 6px 6px 3px;box-shadow:0 1px 0 rgba(0,0,0,.06)}
 
 /* ---- 月：明朝の日付、左上寄せ ---- */
-html[data-theme^=techo] .mg-head{font-family:var(--font);padding-top:12px;border-bottom:1.5px solid var(--rule)}
-html[data-theme^=techo] .mc{border-right:1px solid var(--rule2);border-bottom:1px solid var(--rule)}
-html[data-theme^=techo] .mc .num{align-self:flex-start;font-family:var(--font-num);font-size:14px;margin:0 0 1px 2px;width:auto;height:auto;line-height:1.3;border-radius:0;padding:0 2px;text-align:left}
-html[data-theme^=techo] .mc.today .num{background:linear-gradient(transparent 50%, var(--marker) 50%, var(--marker) 92%, transparent 92%);color:var(--fg)}
-html[data-theme^=techo] .mc.out{background:transparent}
+html[data-book] .mg-head{font-family:var(--font);padding-top:12px;border-bottom:1.5px solid var(--rule)}
+html[data-book] .mc{border-right:1px solid var(--rule2);border-bottom:1px solid var(--rule)}
+html[data-book] .mc .num{align-self:flex-start;font-family:var(--font-num);font-size:14px;margin:0 0 1px 2px;width:auto;height:auto;line-height:1.3;border-radius:0;padding:0 2px;text-align:left}
+html[data-book] .mc.today .num{background:linear-gradient(transparent 50%, var(--marker) 50%, var(--marker) 92%, transparent 92%);color:var(--fg)}
+html[data-book] .mc.out{background:transparent}
 
 /* ---- タスク：ノートの罫線に書いたように ---- */
-html[data-theme^=techo] .tk-head b{font-family:var(--font-head)}
-html[data-theme^=techo] .tk-list li{background:transparent;box-shadow:none;border-radius:0;margin:0;border-bottom:1px dashed var(--rule)}
-html[data-theme^=techo] .tk-box{border-radius:3px;border-width:1.8px;border-color:var(--fg)}
-html[data-theme^=techo] .tk-list li.done .tk-box{background:var(--fg)}
-html[data-theme^=techo] .tk-title{font-weight:600}
+html[data-book] .tk-head b{font-family:var(--font-head)}
+html[data-book] .tk-list li{background:transparent;box-shadow:none;border-radius:0;margin:0;border-bottom:1px dashed var(--rule)}
+html[data-book] .tk-box{border-radius:3px;border-width:1.8px;border-color:var(--fg)}
+html[data-book] .tk-list li.done .tk-box{background:var(--fg)}
+html[data-book] .tk-title{font-weight:600}
 
 /* ---- 下：表紙の上に紙のタグとマイク ---- */
-html[data-theme^=techo] .bottom::before{display:none}
-html[data-theme^=techo] .inbar input{background:var(--bg);border:0;box-shadow:inset 0 1px 2px rgba(0,0,0,.08),0 2px 6px rgba(0,0,0,.25);border-radius:12px}
-html[data-theme^=techo] .mic{background:linear-gradient(145deg,#f3dda2,#c9a85c);color:var(--cover-deep);box-shadow:0 3px 8px rgba(0,0,0,.35),0 0 0 4px rgba(233,207,143,.18)}
-html[data-theme^=techo][data-scheme=dark] .mic{color:#24211c}
+html[data-book] .bottom::before{display:none}
+html[data-book] .inbar input{background:var(--bg);border:0;box-shadow:inset 0 1px 2px rgba(0,0,0,.08),0 2px 6px rgba(0,0,0,.25);border-radius:12px}
+html[data-book] .mic{background:linear-gradient(145deg,#f3dda2,#c9a85c);color:var(--cover-deep);box-shadow:0 3px 8px rgba(0,0,0,.35),0 0 0 4px rgba(233,207,143,.18)}
+html[data-book][data-scheme=dark] .mic{color:#24211c}
 
 /* ---- シート ---- */
-html[data-theme^=techo] .sheet,
-html[data-theme^=techo] .voice{background:var(--surface)}
-html[data-theme^=techo] .sheet h2{font-family:var(--font-head)}
-html[data-theme^=techo] .sheet .ok{background:var(--cover);color:var(--foil)}
-html[data-theme^=techo][data-scheme=dark] .sheet .ok{background:var(--accent);color:var(--on-accent)}
-html[data-theme^=techo] .login{background:var(--cover) var(--noise);background-blend-mode:soft-light}
-html[data-theme^=techo] .login-card h1{color:var(--foil)}
-html[data-theme^=techo] .login-card p{color:rgba(233,207,143,.8)}
-html[data-theme^=techo] .login .primary{background:var(--bg);color:var(--fg)}
-html[data-theme^=techo] .login .link{color:var(--foil)}
-html[data-theme^=techo] .dh.today.holiday b{color:var(--sun)}
-html[data-theme^=techo] .conn-bar{background:rgba(0,0,0,.25);color:var(--foil)}
-html[data-theme^=techo] .conn-bar button{background:var(--foil);color:var(--cover-deep)}
+html[data-book] .sheet,
+html[data-book] .voice{background:var(--surface)}
+html[data-book] .sheet h2{font-family:var(--font-head)}
+html[data-book] .sheet .ok{background:var(--cover);color:var(--foil)}
+html[data-book][data-scheme=dark] .sheet .ok{background:var(--accent);color:var(--on-accent)}
+html[data-book] .login{background:var(--cover) var(--noise);background-blend-mode:soft-light}
+html[data-book] .login-card h1{color:var(--foil)}
+html[data-book] .login-card p{color:rgba(233,207,143,.8)}
+html[data-book] .login .primary{background:var(--bg);color:var(--fg)}
+html[data-book] .login .link{color:var(--foil)}
+html[data-book] .dh.today.holiday b{color:var(--sun)}
+html[data-book] .conn-bar{background:rgba(0,0,0,.25);color:var(--foil)}
+html[data-book] .conn-bar button{background:var(--foil);color:var(--cover-deep)}
+
+/* 紙の模様（ノート用）*/
+html[data-book] .view{background-color:var(--bg);background-image:var(--paper,none);background-size:var(--paper-size,auto);background-repeat:var(--paper-repeat,repeat);background-position:var(--paper-pos,0 0)}
+html[data-book] .dcol,html[data-book] .mc{background-color:transparent}
+html[data-book] .dcol.today{background-color:var(--today-col)}

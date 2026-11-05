@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja" data-theme="techo-camel" data-scheme="light">
+<html lang="ja" data-theme="techo-camel" data-scheme="light" data-book="1">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Cache-Control" content="no-cache">
@@ -15,9 +15,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Klee+One:wght@400;600&family=Shippori+Mincho:wght@600;700&family=Zen+Maru+Gothic:wght@500;700&display=swap">
-<link rel="stylesheet" href="style.css?v=202611051304">
-<link rel="stylesheet" href="themes.css?v=202611051304">
-<link rel="stylesheet" href="techo.css?v=202611051304">
+<link rel="stylesheet" href="style.css?v=202611051309">
+<link rel="stylesheet" href="themes.css?v=202611051309">
+<link rel="stylesheet" href="techo.css?v=202611051309">
+<link rel="stylesheet" href="notes.css?v=202611051309">
 <script>
   // 画面が出る前にテーマを当てる（ちらつき防止）
   (function () {
@@ -25,6 +26,8 @@
     try { t = JSON.parse(localStorage.getItem('theme')) || t; m = JSON.parse(localStorage.getItem('mode')) || m; } catch (e) {}
     d.dataset.theme = t;
     d.dataset.scheme = m === 'dark' || (m === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+    if (/^note-/.test(t)) d.dataset.scheme = /note-(night|chalk)/.test(t) ? 'dark' : 'light'; // ノートは紙の色が固定
+    if (/^(techo|note)-/.test(t)) d.dataset.book = '1';
   })();
 </script>
 </head>
@@ -92,9 +95,9 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script src="config.js?v=202611051304"></script>
-<script src="parse.js?v=202611051304"></script>
-<script src="app.js?v=202611051304"></script>
+<script src="config.js?v=202611051309"></script>
+<script src="parse.js?v=202611051309"></script>
+<script src="app.js?v=202611051309"></script>
 <script src="https://accounts.google.com/gsi/client" async onload="window.onGsiLoaded && window.onGsiLoaded()"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 // Koe のオフライン用。通信できるときは常に最新を取り、できないときだけ保存分を返す
 const CACHE = 'koe-shell-v1';
-const SHELL = ['./', 'index.html', 'style.css', 'themes.css', 'techo.css', 'config.js', 'parse.js', 'app.js', 'icons/icon-192.png', 'manifest.webmanifest'];
+const SHELL = ['./', 'index.html', 'style.css', 'themes.css', 'techo.css', 'notes.css', 'config.js', 'parse.js', 'app.js', 'icons/icon-192.png', 'manifest.webmanifest'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {})); self.skipWaiting(); });
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', (e) => {

@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '202611051304'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
+  const APP_VERSION = '202611051309'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
   const SCOPES = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/tasks';
   const API = 'https://www.googleapis.com/calendar/v3';
   const WD = ['日', '月', '火', '水', '木', '金', '土'];
@@ -401,6 +401,16 @@
 
   // ---------- テーマ（見た目） ----------
   const THEMES = [
+    { id: 'note-grid', group: 'ノート', name: '方眼' },
+    { id: 'note-dot', group: 'ノート', name: 'ドット' },
+    { id: 'note-ruled', group: 'ノート', name: '横罫' },
+    { id: 'note-kraft', group: 'ノート', name: 'クラフト' },
+    { id: 'note-sakura', group: 'ノート', name: '桜' },
+    { id: 'note-sky', group: 'ノート', name: '青空' },
+    { id: 'note-meadow', group: 'ノート', name: '草原' },
+    { id: 'note-parchment', group: 'ノート', name: '古地図' },
+    { id: 'note-night', group: 'ノート', name: '星空' },
+    { id: 'note-chalk', group: 'ノート', name: '黒板' },
     { id: 'techo-camel', name: '手帳・キャメル', sw: ['#8a5a33', '#fbf6ea', '#e9cf8f'] },
     { id: 'techo-navy', name: '手帳・ネイビー', sw: ['#26344f', '#fbf6ea', '#e9cf8f'] },
     { id: 'techo-bordeaux', name: '手帳・ボルドー', sw: ['#6d2230', '#fbf6ea', '#e9cf8f'] },
@@ -417,7 +427,8 @@
   function applyTheme() {
     const t = store.get('theme', DEFAULT_THEME);
     const m = store.get('mode', 'auto');
-    const dark = m === 'dark' || (m === 'auto' && darkMQ.matches);
+    const dark = /^note-/.test(t) ? /note-(night|chalk)/.test(t) : m === 'dark' || (m === 'auto' && darkMQ.matches);
+    if (/^(techo|note)-/.test(t)) document.documentElement.dataset.book = '1'; else delete document.documentElement.dataset.book;
     document.documentElement.dataset.theme = THEMES.some((x) => x.id === t) ? t : DEFAULT_THEME;
     document.documentElement.dataset.scheme = dark ? 'dark' : 'light';
     document.documentElement.dataset.size = cfg('textSize', 'normal');
@@ -516,10 +527,12 @@
     openSheet(`
       <h2>メニュー</h2>
       ${group('look', '見た目', `
-        <div class="themes">${THEMES.map((t) => `<button class="th${t.id === theme ? ' on' : ''}" data-t="${t.id}">
-          <span class="sw3">${t.sw.map((c) => `<i style="background:${c}"></i>`).join('')}</span>${t.name}</button>`).join('')}</div>
+        ${[['手帳', (t) => /^techo/.test(t.id)], ['ノート', (t) => t.group === 'ノート'], ['シンプル', (t) => !/^(techo|note)/.test(t.id)]].map(([label, f]) => `
+          <div class="sec" style="margin-top:6px">${label}</div>
+          <div class="themes">${THEMES.filter(f).map((t) => `<button class="th${t.id === theme ? ' on' : ''}" data-t="${t.id}">
+            ${t.sw ? `<span class="sw3">${t.sw.map((c) => `<i style="background:${c}"></i>`).join('')}</span>` : `<span class="th-thumb" data-theme="${t.id}"></span>`}${t.name}</button>`).join('')}</div>`).join('')}
         <div class="modes" style="margin-top:8px">${MODES.map((m) => `<button data-m="${m.id}" class="${m.id === mode ? 'on' : ''}">${m.name}</button>`).join('')}</div>
-        <p class="note" style="margin-top:6px">「自動」は iPhone の設定（ライト／ダーク）に合わせます。</p>
+        <p class="note" style="margin-top:6px">「自動」は iPhone の設定（ライト／ダーク）に合わせます。ノートは紙の色が決まっているので切り替わりません。</p>
         ${row('予定の文字', sel('textSize', 'normal', [['small', '小'], ['normal', '標準'], ['large', '大']]))}`)}
       ${group('view', '表示', `
         ${row('起動時の画面', sel('startView', 'last', [['last', '前回の画面'], ['day', '日'], ['week', '週'], ['month', '月']]))}
