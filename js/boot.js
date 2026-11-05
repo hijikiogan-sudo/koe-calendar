@@ -2,7 +2,14 @@
 'use strict';
 // ---------- ログイン ----------
 let tokenClient = null;
-const cfgClientId = () => (window.APP_CONFIG && window.APP_CONFIG.GOOGLE_CLIENT_ID || '').trim();
+const cfgClientId = () => (window.APP_CONFIG && (NATIVE ? window.APP_CONFIG.GOOGLE_IOS_CLIENT_ID : window.APP_CONFIG.GOOGLE_CLIENT_ID) || '').trim();
+
+function saveToken(resp) {
+  state.token = resp.access_token;
+  state.tasksOk = /auth\/tasks/.test(resp.scope || '');
+  state.authLost = false; state.stale = null;
+  store.set('token', { v: resp.access_token, exp: Date.now() + (resp.expires_in - 60) * 1000, scope: resp.scope || '' });
+}
 
 window.onGsiLoaded = () => {
   if (!cfgClientId() || !window.google) return;
@@ -11,16 +18,35 @@ window.onGsiLoaded = () => {
     scope: SCOPES,
     callback: async (resp) => {
       if (resp.error) { toast('ログインできませんでした'); return; }
-      state.token = resp.access_token;
-      state.tasksOk = /auth\/tasks/.test(resp.scope || '');
-      state.authLost = false; state.stale = null;
-      store.set('token', { v: resp.access_token, exp: Date.now() + (resp.expires_in - 60) * 1000, scope: resp.scope || '' });
+      saveToken(resp);
       $('#login').hidden = true;
       await startGoogle();
     },
   });
   $('#btn-login').disabled = false;
 };
+
+// iOSアプリ：ログインはiOSの画面で行い、次からは保存した鍵で自動的につなぐ
+async function startNative() {
+  tokenClient = {
+    requestAccessToken() {
+      KoeAuth.signIn({ clientId: cfgClientId(), scope: SCOPES })
+        .then(async (resp) => { saveToken(resp); $('#login').hidden = true; await startGoogle(); })
+        .catch((err) => { if (err.code !== 'canceled') toast(err.message || 'ログインできませんでした'); });
+    },
+  };
+  $('#btn-login').disabled = false;
+  const calCache = store.get('calCache', []);
+  if (calCache.length) { state.calendars = applyCalColors(calCache); loadCached(); }
+  try {
+    await nativeRefresh();
+    await startGoogle();
+  } catch (err) {
+    if (err.code === 'none') { showLogin(); return; }
+    if (err.code === 'revoked') { connectionLost(); return; }
+    if (!calCache.length) toast('通信を確認してください'); // 電波がないときは保存済みの予定を見せる
+  }
+}
 
 function showLogin() { $('#login').hidden = false; }
 
@@ -46,7 +72,8 @@ function startDemo() {
 }
 
 function logout() {
-  if (state.token && window.google) google.accounts.oauth2.revoke(state.token, () => {});
+  if (NATIVE) KoeAuth.signOut().catch(() => {});
+  else if (state.token && window.google) google.accounts.oauth2.revoke(state.token, () => {});
   ['token', 'corpus', 'evCache', 'taskCache', 'calCache'].forEach((k) => store.del(k)); corpus = null;
   state.token = null; state.events = []; state.tasks = []; state.calendars = []; state.authLost = false; state.stale = null;
   closeSheet(); render(); showLogin();
@@ -68,6 +95,16 @@ function handleError(err) {
 }
 
 // ---------- 操作 ----------
+// 入力欄：文字に合わせて高さを変え、文字があるときはマイクを送信ボタンにする
+function syncInText() {
+  const t = $('#intext');
+  t.style.height = 'auto';
+  if (t.value) t.style.height = `${t.scrollHeight + t.offsetHeight - t.clientHeight}px`;
+  const has = !!t.value.trim();
+  $('#btn-mic').classList.toggle('send', has);
+  $('#btn-mic').setAttribute('aria-label', has ? '確認画面へ進む' : '声で登録');
+}
+function setInText(v) { $('#intext').value = v; syncInText(); }
 function setView(v) { state.view = v; store.set('view', v); state.scrollTop = null; load(); }
 function shift(dir) {
   if (state.view === 'today') { state.anchor = addDays(startOfDay(new Date()), dir); setView('day'); return; }
@@ -99,7 +136,7 @@ function bind() {
   $('#sheet-bg').onclick = () => { closeVoice(); closeSheet(); };
   $('#btn-login').onclick = () => tokenClient && tokenClient.requestAccessToken({ prompt: '' });
   $('#btn-demo').onclick = startDemo;
-  $('#btn-mic').onclick = () => startVoice();
+  $('#btn-mic').onclick = () => { if ($('#intext').value.trim()) $('#inbar').requestSubmit(); else startVoice(); };
   $('#v-mic').onclick = () => { if (voice.rec) voice.rec.stop(); else listen(); };
   $('#v-kb').onclick = () => {
     const slot = voice.slot; closeVoice();
@@ -111,8 +148,16 @@ function bind() {
     if (!text) { $('#intext').focus(); return; }
     $('#intext').blur();
     const slot = pendingSlot; clearSlot();
-    openConfirm(text, slot);
+    openConfirm(text.replace(/\s*\n+\s*/g, ' '), slot); // 改行は区切りとして読む
   };
+  $('#intext').addEventListener('input', syncInText);
+  // パソコンはEnterで送信（Shift+Enterで改行）。スマホの改行キーは改行になる
+  $('#intext').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && matchMedia('(hover:hover) and (pointer:fine)').matches) {
+      e.preventDefault();
+      $('#inbar').requestSubmit();
+    }
+  });
   $('#intext').addEventListener('blur', () => { if (pendingSlot && !$('#intext').value.trim()) setTimeout(clearSlot, 200); });
 
   // 左右スワイプで前後へ
@@ -137,7 +182,7 @@ function onResume() {
   if (busy) return; // 入力中は邪魔しない
   checkNewVersion();
   const saved = store.get('token', null);
-  if (state.token && saved && saved.exp <= Date.now()) { connectionLost(); return; }
+  if (!NATIVE && state.token && saved && saved.exp <= Date.now()) { connectionLost(); return; }
   load();
   refreshCorpus();
   syncDict();
@@ -147,7 +192,7 @@ window.addEventListener('online', () => { if (state.token) load(); });
 window.addEventListener('offline', () => renderConn());
 
 // ---------- 起動 ----------
-if ('serviceWorker' in navigator && !location.pathname.includes('_t')) navigator.serviceWorker.register('sw.js').catch((err) => console.warn(err));
+if (!NATIVE && 'serviceWorker' in navigator && !location.pathname.includes('_t')) navigator.serviceWorker.register('sw.js').catch((err) => console.warn(err));
 checkNewVersion();
 applyTheme();
 bind();
@@ -155,6 +200,8 @@ render();
 const forceDemo = new URLSearchParams(location.search).has('demo');
 if (forceDemo || !cfgClientId()) {
   startDemo();
+} else if (NATIVE) {
+  startNative();
 } else {
   const saved = store.get('token', null);
   const calCache = store.get('calCache', []);

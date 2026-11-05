@@ -2,10 +2,10 @@
 'use strict';
 // ---------- 声の命令 ----------
 async function runCommand(cmd, text) {
-  if (cmd.cmd === 'show') { state.anchor = startOfDay(cmd.date); state.scrollTop = null; setView(cmd.view); $('#intext').value = ''; return; }
-  if (cmd.cmd === 'search') { $('#intext').value = ''; openSearch(cmd.word); return; }
+  if (cmd.cmd === 'show') { state.anchor = startOfDay(cmd.date); state.scrollTop = null; setView(cmd.view); setInText(''); return; }
+  if (cmd.cmd === 'search') { setInText(''); openSearch(cmd.word); return; }
   if (cmd.cmd === 'memo') {
-    $('#intext').value = '';
+    setInText('');
     if (!state.diary.has(ymd(cmd.date)) && !state.demo && state.token) { // 表示範囲の外の日は、先に読む
       try {
         const list = await eventsBetween(cmd.date, addDays(cmd.date, 1));
@@ -44,7 +44,7 @@ async function runCommand(cmd, text) {
   });
   $('#c-asnew').onclick = () => openConfirm(text, null, true);
   $('#c-none').onclick = closeSheet;
-  $('#intext').value = '';
+  setInText('');
 }
 
 // ---------- 検索 ----------
@@ -203,6 +203,7 @@ function openDuplicate(ev) {
 // ---------- 新しい版の確認 ----------
 // ページ自体がキャッシュされて古い版が動き続けるのを防ぐ。新しい版があれば1回だけ開き直す
 async function checkNewVersion() {
+  if (NATIVE) return; // アプリは中に入れた版で動く
   try {
     const r = await fetch(`version.json?t=${Date.now()}`, { cache: 'no-store' });
     if (!r.ok) return;

@@ -78,11 +78,13 @@ button{background:none;border:0;padding:0;cursor:pointer}
 /* ---------- 下部（入力欄＋マイク） ---------- */
 .bottom{display:flex;align-items:center;gap:10px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--bg)}
 .inbar{flex:1}
-.inbar input{width:100%;height:44px;border-radius:22px;border:0;background:var(--input);padding:0 16px;font-size:16px;color:var(--fg);outline:none}
-.inbar input::placeholder,.chg-bar input::placeholder{color:var(--muted)}
-.inbar input:focus{box-shadow:0 0 0 2px var(--focus)}
+.inbar textarea{display:block;width:100%;min-height:44px;max-height:118px;border-radius:22px;border:0;background:var(--input);padding:11px 16px;font:inherit;font-size:16px;line-height:22px;color:var(--fg);outline:none;resize:none;overflow-y:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.inbar textarea::placeholder{white-space:nowrap}
+.inbar textarea::placeholder,.chg-bar input::placeholder{color:var(--muted)}
+.inbar textarea:focus{box-shadow:0 0 0 2px var(--focus)}
 .mic{width:60px;height:60px;flex:none;border-radius:50%;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 6px var(--accent-ring)}
 .mic:active{transform:scale(.95)}
+.mic .i-send{display:none}.mic.send .i-send{display:block}.mic.send .i-mic{display:none}
 .mic svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
 
 /* ---------- シート・ログイン・トースト ---------- */
@@ -265,7 +267,7 @@ body{-webkit-font-smoothing:antialiased;letter-spacing:.01em}
 /* 下の入力欄：浮いた丸いバー */
 .bottom{border-top:0;background:transparent;padding:8px 12px calc(10px + env(safe-area-inset-bottom));position:relative}
 .bottom::before{content:"";position:absolute;inset:-14px 0 0 0;background:linear-gradient(transparent,var(--bg) 14px);pointer-events:none;z-index:-1}
-.inbar input{height:50px;border-radius:25px;background:var(--surface);box-shadow:var(--shadow-md);border:1px solid var(--line);padding:0 18px}
+.inbar textarea{min-height:50px;border-radius:25px;background:var(--surface);box-shadow:var(--shadow-md);border:1px solid var(--line);padding:13px 18px}
 .mic{width:58px;height:58px;box-shadow:var(--shadow-md),0 0 0 5px var(--accent-ring)}
 
 /* シート */

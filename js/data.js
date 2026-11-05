@@ -102,10 +102,12 @@ function htmlToText(html) {
   return (new DOMParser().parseFromString(t, 'text/html').body.textContent || '').trim();
 }
 
-async function api(path, method = 'GET', body) {
+async function api(path, method = 'GET', body, retried) {
+  await ensureFreshToken();
   const opt = { method, headers: { Authorization: `Bearer ${state.token}` } };
   if (body) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
   const r = await fetch(path.startsWith('http') ? path : API + path, opt);
+  if (r.status === 401 && NATIVE && !retried) { store.del('token'); return api(path, method, body, true); } // 期限前に切れたときは一度つなぎ直す
   if (r.status === 401) throw Object.assign(new Error('auth'), { auth: true });
   if (r.status === 403 && path.includes('tasks.googleapis')) throw Object.assign(new Error('ToDoリストの許可がありません'), { scope: true });
   if (!r.ok) throw new Error(`Google APIエラー（${r.status}）`);

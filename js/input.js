@@ -3,7 +3,7 @@
 // ---------- 声で登録・変更 ----------
 const voice = { open: false, rec: null, heard: '', final: '', error: '', onText: null, prompt: '' };
 const VOICE_ERR = {
-  'not-allowed': 'マイクの使用が許可されていません。ブラウザの設定で許可してください',
+  'not-allowed': NATIVE ? 'マイクか音声認識が許可されていません。設定アプリのKoeで許可してください' : 'マイクの使用が許可されていません。ブラウザの設定で許可してください',
   'service-not-allowed': 'このブラウザでは音声認識が使えません。文字で入力してください',
   'audio-capture': 'マイクが見つかりません',
   'network': '音声認識につながりませんでした。通信を確認してください',
