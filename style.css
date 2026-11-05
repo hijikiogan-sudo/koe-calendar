@@ -416,3 +416,10 @@ html[data-size=large] .wl-title{font-size:16px}
 .tk-list li.sub .tk-box{width:18px;height:18px}
 .tk-list li.sub .tk-box::after{font-size:12px;line-height:14px}
 .e-acts .act{min-width:84px}
+
+/* 重なりの警告・よく使う予定・話し方の見本 */
+.conflict{margin:4px 0 0;padding:7px 10px;border-radius:8px;background:var(--warn-bg);color:var(--warn-fg);font-size:13px;font-weight:600;line-height:1.45}
+.v-heard.empty{white-space:pre-line;font-size:15px}
+.v-quick{width:100%;display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.v-quick button{padding:6px 12px;border-radius:999px;background:var(--soft);color:var(--fg);font-size:14px;font-weight:600}
+.dict-offer{bottom:calc(140px + env(safe-area-inset-bottom))}

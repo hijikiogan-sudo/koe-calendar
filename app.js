@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '202611051427'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
+  const APP_VERSION = '202611051440'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
   const SCOPES = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/tasks';
   const API = 'https://www.googleapis.com/calendar/v3';
   const WD = ['日', '月', '火', '水', '木', '金', '土'];
@@ -504,7 +504,11 @@
     const v = eventToForm(ev);
     openForm(v, {
       heading: '複製して登録しますか？', busyLabel: '登録中…', fixedKind: true, keepRemind: true, allowRecur: true,
-      onOk: async (out) => { await insertEvent({ ...out, description: ev.description }); noteCorpus(out); toast(`複製しました：${out.title}`); },
+      onOk: async (out) => {
+        const undo = await insertEvent({ ...out, description: ev.description });
+        noteCorpus(out);
+        showUndo(`複製しました：${out.title}`, async () => { await undo(); load(); });
+      },
     });
   }
 
@@ -648,7 +652,7 @@
     document.querySelectorAll('.dict-offer').forEach((x) => x.remove());
     const box = el('div', 'dict-offer');
     $('#toast').hidden = true; // 「登録しました」と重ならないように、案内にまとめる
-    box.innerHTML = `<span>登録しました。次から「${esc(p.from)}」を「${esc(p.to)}」にしますか？</span><button class="yes">辞書に登録</button><button class="no">いいえ</button>`;
+    box.innerHTML = `<span>次から「${esc(p.from)}」を「${esc(p.to)}」にしますか？</span><button class="yes">辞書に登録</button><button class="no">いいえ</button>`;
     $('#app').appendChild(box);
     const timer = setTimeout(() => box.remove(), 15000);
     box.querySelector('.no').onclick = () => { clearTimeout(timer); box.remove(); };
@@ -904,6 +908,7 @@
       end: allDay ? parseYMD(it.end.date) : new Date(it.end.dateTime),
       color: cal.color, text: cal.text,
       reminders: it.reminders, recurring: !!it.recurringEventId, masterId: it.recurringEventId || null,
+      transparent: it.transparency === 'transparent', // 「空き時間」扱いの予定
     };
   }
 
@@ -997,6 +1002,7 @@
         `<button type="button" class="cc${c.id === v.calId ? ' on' : ''}" data-id="${esc(c.id)}" style="--c:${c.color};--ct:${c.text || '#fff'}">${esc(c.name)}</button>`).join('')}</div></div>
       <label class="f${ch('title')}"><span class="fl">内容</span><input id="c-title" value="${esc(v.title || '')}" placeholder="例：打ち合わせ"></label>
       <div class="sugg" id="s-title" hidden></div>
+      ${opt.quick ? '<div class="sugg" id="s-quick" hidden></div>' : ''}
       <div class="f${ch('date')}"><span class="fl" id="c-date-l">日付</span><div class="trow">
         <input id="c-date" type="date" value="${ymd(v.date || startOfDay(new Date()))}" ${v.noDue ? 'disabled' : ''}>
         <label class="sw task-only"><input id="c-nodue" type="checkbox" ${v.noDue ? 'checked' : ''}>期限なし</label>
@@ -1007,6 +1013,7 @@
         <span>〜</span>
         <input id="c-end" type="time" value="${minToHM(end)}" ${v.allDay ? 'disabled' : ''}>
       </div></div>
+      <div class="conflict ev-only" id="c-conflict" hidden></div>
       <div class="f ev-only" id="c-endrow" ${hasEnd ? '' : 'hidden'}><span class="fl">終わりの日</span><input id="c-enddate" type="date" value="${ymd(addDays(v.date || startOfDay(new Date()), v.allDay ? (v.spanDays || 1) - 1 : v.endDays || 0))}"></div>
       ${opt.lockDate ? '<p class="note ev-only" style="margin:4px 0 0">この範囲では日付を変えられません。時間・内容・場所・通知は変えられます。</p>' : `<button type="button" class="link ev-only" id="c-endadd" style="margin-top:6px" ${hasEnd ? 'hidden' : ''}>＋ 別の日に終わる</button>`}
       ${opt.allowRecur ? `<label class="f ev-only"><span class="fl">繰り返し</span><select id="c-recur">${RECURS.map((r) => `<option value="${r.v}" ${r.v === (v.recur || '') ? 'selected' : ''}>${r.label}</option>`).join('')}</select></label>` : ''}
@@ -1045,6 +1052,45 @@
     if (opt.lockDate) { ['c-date', 'c-enddate', 'c-allday'].forEach((id) => { $('#' + id).disabled = true; }); }
     if (opt.lockCal) sh.querySelectorAll('.cc:not(.lc)').forEach((b) => { b.disabled = true; b.style.opacity = b.classList.contains('on') ? 1 : .35; });
     if ($('#c-endadd')) $('#c-endadd').onclick = () => { $('#c-endrow').hidden = false; $('#c-endadd').hidden = true; };
+    // 同じ時間の予定があれば知らせる（登録は止めない）
+    const dayCache = new Map();
+    let conflictSeq = 0;
+    const checkConflict = async () => {
+      const box = $('#c-conflict'); if (!box) return;
+      const id = ++conflictSeq;
+      const d = parseYMD($('#c-date').value);
+      if (kind !== 'event' || $('#c-allday').checked || isNaN(d) || !$('#c-start').value || !$('#c-end').value) { box.hidden = true; return; }
+      const startMin = hmToMin($('#c-start').value);
+      let endMin = hmToMin($('#c-end').value);
+      const endVal = parseYMD($('#c-enddate').value);
+      const diff = $('#c-endrow').hidden || isNaN(endVal) ? 0 : Math.round((endVal - d) / 86400000);
+      endMin += diff * 1440;
+      if (endMin <= startMin) endMin += 1440;
+      const from = new Date(d); from.setMinutes(startMin);
+      const to = new Date(d); to.setMinutes(endMin);
+      const key = `${ymd(d)}|${diff}`;
+      if (!dayCache.has(key)) dayCache.set(key, eventsBetween(d, addDays(d, diff + 2)));
+      const list = await dayCache.get(key);
+      if (id !== conflictSeq || !$('#c-conflict')) return;
+      const hit = list.filter((e) => !e.allDay && !e.transparent && e.start < to && e.end > from && !(opt.notConflict && opt.notConflict(e)));
+      box.hidden = !hit.length;
+      box.textContent = hit.length ? `この時間には ${hit.slice(0, 3).map((e) => `「${e.title}」${hm(e.start)}〜${hm(e.end)}`).join('、')}${hit.length > 3 ? ` ほか${hit.length - 3}件` : ''} があります` : '';
+    };
+    ['c-date', 'c-start', 'c-end', 'c-allday', 'c-enddate'].forEach((x) => $('#' + x).addEventListener('change', checkConflict));
+    sh.querySelectorAll('.kind-seg button').forEach((b) => b.addEventListener('click', checkConflict));
+    checkConflict();
+    // 内容が空のときは、よく使う予定を候補に出す
+    if (opt.quick) {
+      const box = $('#s-quick');
+      const drawQuick = () => {
+        const list = $('#c-title').value.trim() ? [] : quickTitles();
+        box.hidden = !list.length;
+        box.innerHTML = list.length ? `<span>よく使う</span>${list.map((t, i) => `<button type="button" data-i="${i}">${esc(t)}</button>`).join('')}` : '';
+        box.querySelectorAll('button').forEach((b) => b.onclick = () => { $('#c-title').value = list[Number(b.dataset.i)]; $('#c-title').dispatchEvent(new Event('input')); });
+      };
+      $('#c-title').addEventListener('input', drawQuick);
+      drawQuick();
+    }
     let prevDate = $('#c-date').value;
     $('#c-date').addEventListener('change', () => { // 開始日を動かしたら終わりの日も同じだけ動かす
       const a = parseYMD($('#c-date').value), o = parseYMD(prevDate), e = parseYMD($('#c-enddate').value);
@@ -1159,6 +1205,25 @@
       corpusStatus = `読み込み失敗（${err && err.message ? err.message : '不明'}）`;
     }
   }
+  // よく使う予定：予定の名前で多い順に6つ（2回以上使ったもの）
+  function quickTitles() {
+    const min = state.demo ? 1 : 2;
+    return Object.entries(getCorpus('titles', true))
+      .filter(([t, n]) => n >= min && [...t].length <= 14)
+      .sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t]) => t);
+  }
+  function drawVoiceQuick() {
+    const box = $('#v-quick');
+    const show = voice.onText === openConfirm || voice.slot;
+    const list = show ? quickTitles() : [];
+    box.hidden = !list.length;
+    box.innerHTML = list.map((t, i) => `<button data-i="${i}">${esc(t)}</button>`).join('');
+    box.querySelectorAll('button').forEach((b) => b.onclick = () => {
+      const cb = voice.onText, t = list[Number(b.dataset.i)];
+      closeVoice();
+      cb(t);
+    });
+  }
   function attachSuggest(input, box, kind) {
     const draw = () => {
       const list = window.KoeParse.suggest(input.value, getCorpus(kind));
@@ -1251,13 +1316,13 @@
       spanDays: p.spanDays, endDays: p.endDays, recur: p.recur ? p.recur.freq : '', monthEnd: !!(p.recur && p.recur.monthEnd),
       listId: (p.calSaid && state.taskLists.find((l) => { const c = cals.find((x) => x.id === p.calId); return c && (c.name.includes(l.title) || l.title.includes(c.name)); }) || {}).id,
     }, {
-      heading: 'この内容で登録しますか？', heard: text, busyLabel: '登録中…', allowRecur: true,
+      heading: 'この内容で登録しますか？', heard: text, busyLabel: '登録中…', allowRecur: true, quick: true,
       onFixed: (title, location) => { p.title = title; p.location = location; }, // 直した後を基準に、案内の重複を防ぐ
       onOk: async (v) => {
-        if (v.kind === 'task') await insertTask(v); else await insertEvent(v);
+        const undo = v.kind === 'task' ? await insertTask(v) : await insertEvent(v);
         noteCorpus(v);
         $('#intext').value = '';
-        toast(`${v.kind === 'task' ? 'タスクを' : ''}登録しました：${v.title}`);
+        showUndo(`${v.kind === 'task' ? 'タスクを' : ''}登録しました：${v.title}`, async () => { await undo(); load(); });
         offerDict([window.KoeParse.dictDiff(p.title, v.title), v.kind === 'task' ? null : window.KoeParse.dictDiff(p.location, v.location)]);
       },
     });
@@ -1308,12 +1373,14 @@
     const listId = v.listId || (state.taskLists[0] && state.taskLists[0].id) || '@default';
     if (state.demo) {
       const l = DEMO_LISTS.find((x) => x.id === listId) || DEMO_LISTS[0];
-      demoTaskList().push({ id: 't' + Date.now(), listId: l.id, listTitle: l.title, title: v.title, due: v.noDue ? null : v.date });
-      return;
+      const id = 't' + Date.now();
+      demoTaskList().push({ id, listId: l.id, listTitle: l.title, title: v.title, due: v.noDue ? null : v.date });
+      return async () => { demoTasks = demoTaskList().filter((x) => x.id !== id); };
     }
     const body = { title: v.title };
     if (!v.noDue) body.due = dueStr(v.date);
-    await api(`${TASKS_API}/lists/${encodeURIComponent(listId)}/tasks`, 'POST', body);
+    const created = await api(`${TASKS_API}/lists/${encodeURIComponent(listId)}/tasks`, 'POST', body);
+    return () => api(taskPath({ listId, id: created.id }), 'DELETE');
   }
   async function updateTask(t, v) {
     if (state.demo) { Object.assign(demoTaskList().find((x) => x.id === t.id), { title: v.title, due: v.noDue ? null : v.date }); return; }
@@ -1423,6 +1490,19 @@
     };
   }
 
+  // 重なりの確認用：指定期間の予定（読めなければ空）
+  async function eventsBetween(a, b) {
+    const hit = (e) => e.start < b && e.end > a;
+    if (state.demo) return demoEvents().filter(hit);
+    const [rs, re] = range();
+    if (a >= rs && b <= re) return state.events.filter(hit);
+    if (!state.token) return [];
+    try {
+      const cals = state.calendars.filter((c) => !isHolidayCal(c) && !state.hidden.has(c.id));
+      return (await Promise.all(cals.map((c) => fetchEvents(c, a, b)))).flat();
+    } catch (err) { return []; }
+  }
+
   // 予定の今の内容を、確認画面の形にする
   function eventToForm(ev) {
     const date = startOfDay(ev.start);
@@ -1467,6 +1547,7 @@
     openForm(v, {
       heading: ev.recurring ? `変更しますか？（${SCOPE_LABEL[scope]}）` : 'この内容に変更しますか？', heard: text, busyLabel: '変更中…', okLabel: '変更する', changed, keepRemind: true, fixedKind: true,
       lockDate: locked, lockCal: ev.recurring && scope === 'this',
+      notConflict: (e) => e.id === ev.id || (scope !== 'this' && ev.masterId && e.masterId === ev.masterId),
       keepLabel: ev.reminders && ev.reminders.overrides && ev.reminders.overrides.length > 1 ? `そのまま（通知${ev.reminders.overrides.length}件）` : '',
       onOk: async (out) => { await updateEvent(ev, out, scope); toast(`変更しました：${out.title}`); },
     });
@@ -1496,17 +1577,20 @@
     return { body, startDate: v.allDay ? v.date : at(v.start), endDate: v.allDay ? addDays(v.date, v.spanDays || 1) : at(endMin) };
   }
 
+  // 登録して、取り消す処理を返す
   async function insertEvent(v) {
     const { body, startDate, endDate } = eventBody(v);
     if (state.demo) {
       const c = state.calendars.find((x) => x.id === v.calId);
-      demoEvents().push({ id: 'demo' + Date.now(), calId: v.calId, title: v.title, location: v.location, allDay: v.allDay,
+      const id = 'demo' + Date.now();
+      demoEvents().push({ id, calId: v.calId, title: v.title, location: v.location, allDay: v.allDay,
         start: startDate, end: endDate, color: c.color, remind: v.remind });
-      return;
+      return async () => { demoStore = demoEvents().filter((x) => x.id !== id); };
     }
     if (!body.location) delete body.location;
     if (!body.reminders) body.reminders = v.remind === 'default' ? { useDefault: true } : { useDefault: false, overrides: [] };
-    await api(`/calendars/${encodeURIComponent(v.calId)}/events`, 'POST', body);
+    const created = await api(`/calendars/${encodeURIComponent(v.calId)}/events`, 'POST', body);
+    return () => api(`/calendars/${encodeURIComponent(v.calId)}/events/${encodeURIComponent(created.id)}`, 'DELETE');
   }
 
   async function updateEvent(ev, v, scope = 'this') {
@@ -1596,12 +1680,13 @@
     'network': '音声認識につながりませんでした。通信を確認してください',
   };
 
-  function startVoice(onText = openConfirm, prompt = '話してください') {
+  function startVoice(onText = openConfirm, prompt = '話してください\n例：明日14時、会議、本館3階会議室、10分前に通知') {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { toast('このブラウザは声の入力に対応していません。文字で入力してください'); return; }
     voice.open = true; voice.onText = onText; voice.prompt = prompt;
     if (onText === openConfirm) voice.slot = null;
     $('#voice').hidden = false; $('#sheet-bg').hidden = false;
+    drawVoiceQuick();
     listen(SR);
   }
 
@@ -1655,6 +1740,7 @@
   function closeVoice() {
     voice.open = false;
     clearTimeout(voice.silence);
+    voice.slot = null;
     if (voice.rec) { try { voice.rec.abort(); } catch {} voice.rec = null; }
     $('#voice').hidden = true;
     if ($('#sheet').hidden) $('#sheet-bg').hidden = true;
@@ -1678,7 +1764,7 @@
     voice.slot = slot;
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { useTextForSlot(slot); return; }
-    startVoice((t) => openConfirm(t, slot), `${slotLabel(slot)} の予定を話してください（例：打ち合わせ、会議室A）`);
+    startVoice((t) => openConfirm(t, slot), `${slotLabel(slot)} の予定を話してください\n例：会議、本館3階会議室、10分前に通知`);
   }
 
   function useTextForSlot(slot) {
