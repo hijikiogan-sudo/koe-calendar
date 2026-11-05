@@ -2,11 +2,11 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '202611051309'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
+  const APP_VERSION = '202611051312'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
   const SCOPES = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/tasks';
   const API = 'https://www.googleapis.com/calendar/v3';
   const WD = ['日', '月', '火', '水', '木', '金', '土'];
-  const HOUR = 52; // style.css の --hour と合わせる
+  let HOUR = 60; // 1時間の高さ。設定で変えられる（applyThemeで反映）
 
   const $ = (s) => document.querySelector(s);
   const store = {
@@ -74,6 +74,7 @@
     v.innerHTML = '';
     renderTasks();
     if (state.view === 'month') { v.appendChild(renderMonth()); return; }
+    if (state.view === 'week' && cfg('weekStyle', 'grid') === 'list') { v.appendChild(renderWeekList()); return; }
     const n = state.view === 'day' ? 1 : 7;
     v.appendChild(renderTimeGrid(n));
     // 時間軸のスクロール位置：前の位置を保つ。初回は今の時刻（今日を含まなければ8時）付近
@@ -114,7 +115,7 @@
 
     // 日付の見出し
     const head = el('div', 'tg-row tg-head');
-    head.appendChild(el('div'));
+    head.appendChild(n > 1 ? weekToggle() : el('div'));
     days.forEach((d) => {
       const h = el('button', 'dh' + (sameDay(d, today) ? ' today' : '') + (d.getDay() === 0 ? ' sun' : d.getDay() === 6 ? ' sat' : '') + (state.holidays.has(ymd(d)) ? ' holiday' : ''));
       h.innerHTML = `${WD[d.getDay()]}<b>${d.getDate()}</b>`;
@@ -156,12 +157,14 @@
       timed.forEach((t) => {
         const top = (t.s - d) / 3600000 * HOUR;
         const h = Math.max((t.e - t.s) / 3600000 * HOUR, 20);
-        const b = el('button', 'ev');
-        b.style.cssText = `top:${top}px;height:${h - 1}px;left:${t.col / t.cols * 100}%;width:calc(${100 / t.cols}% - 2px);--c:${t.ev.color}`;
-        const short = h < 36;
-        b.innerHTML = short
-          ? `${esc(t.ev.title)}`
-          : `${n === 1 ? `<div class="t">${hm(t.ev.start)}〜${hm(t.ev.end)}</div>` : ''}<div>${esc(t.ev.title)}</div>${t.ev.location ? `<div class="p">${esc(t.ev.location)}</div>` : ''}`;
+        const b = el('div', 'ev');
+        b.setAttribute('role', 'button');
+        // 週表示は重なった予定を少しずつずらして重ねる（半分に割ると細すぎて読めない）。日表示は横に並べる
+        const left = n > 1 ? t.col * (t.cols > 2 ? 18 : 28) : t.col / t.cols * 100;
+        const width = n > 1 ? 100 - left : 100 / t.cols;
+        b.style.cssText = `top:${top}px;height:${h - 1}px;left:${left}%;width:calc(${width}% - 2px);z-index:${t.col + 1};--c:${t.ev.color}`;
+        // 名前は上に出し、長い予定をスクロールしても見えたままにする
+        b.innerHTML = `<div class="ev-in">${n === 1 && h >= 36 ? `<div class="t">${hm(t.ev.start)}〜${hm(t.ev.end)}</div>` : ''}<div class="ev-title">${esc(t.ev.title)}</div>${t.ev.location && h >= 56 ? `<div class="p">${esc(t.ev.location)}</div>` : ''}</div>`;
         b.onclick = () => openEvent(t.ev);
         col.appendChild(b);
       });
@@ -181,6 +184,62 @@
     });
     scroll.appendChild(body);
     root.appendChild(scroll);
+    return root;
+  }
+
+  // 週の「時間軸／一覧」を切り替えるボタン
+  function weekToggle() {
+    const list = cfg('weekStyle', 'grid') === 'list';
+    const b = el('button', 'week-toggle');
+    b.setAttribute('aria-label', list ? '時間軸で見る' : '一覧で見る');
+    b.innerHTML = list ? '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 4v16"/></svg><span>時間</span>' : '<svg viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h14"/></svg><span>一覧</span>';
+    b.onclick = () => { setCfg('weekStyle', list ? 'grid' : 'list'); state.scrollTop = null; render(); };
+    return b;
+  }
+
+  // 週の一覧表示：1日1行で予定名を全部読める
+  function renderWeekList() {
+    const [s] = range();
+    const today = startOfDay(new Date());
+    const root = el('div', 'wl');
+    const bar = el('div', 'wl-bar');
+    bar.appendChild(weekToggle());
+    root.appendChild(bar);
+    const body = el('div', 'wl-body');
+    let todayRow = null;
+    for (let i = 0; i < 7; i++) {
+      const d = addDays(s, i);
+      const hol = state.holidays.get(ymd(d));
+      const row = el('div', 'wl-row' + (sameDay(d, today) ? ' today' : '') + (d.getDay() === 0 ? ' sun' : d.getDay() === 6 ? ' sat' : '') + (hol ? ' holiday' : ''));
+      if (sameDay(d, today)) todayRow = row;
+      const dayBtn = el('button', 'wl-day');
+      dayBtn.innerHTML = `<b>${d.getDate()}</b><span>${WD[d.getDay()]}</span>`;
+      dayBtn.onclick = () => { state.anchor = d; setView('day'); };
+      row.appendChild(dayBtn);
+      const items = el('div', 'wl-items');
+      const evs = eventsOn(d).sort((a, b2) => (b2.allDay - a.allDay) || (a.start - b2.start));
+      if (hol && !evs.some((ev) => ev.title === hol)) items.appendChild(Object.assign(el('div', 'wl-hol'), { textContent: hol })); // 祝日を非表示にしていても名前は出す
+      evs.forEach((ev) => {
+        const it = el('button', 'wl-ev');
+        it.style.setProperty('--c', ev.color);
+        const time = ev.allDay ? '終日' : sameDay(ev.start, d) ? hm(ev.start) : '続き';
+        it.innerHTML = `<span class="wl-time">${time}</span><span class="wl-title">${esc(ev.title)}${ev.location ? `<small>${esc(ev.location)}</small>` : ''}</span>`;
+        it.onclick = () => openEvent(ev);
+        items.appendChild(it);
+      });
+      state.tasks.filter((t) => t.due && sameDay(t.due, d)).forEach((t) => {
+        const it = el('button', 'wl-ev wl-task');
+        it.innerHTML = `<span class="wl-time">タスク</span><span class="wl-title">☐ ${esc(t.title)}</span>`;
+        it.onclick = () => openTask(t);
+        items.appendChild(it);
+      });
+      if (!evs.length && !hol) items.appendChild(el('div', 'wl-empty'));
+      row.appendChild(items);
+      attachLongPress(row, () => startSlot({ date: d, start: null }, null));
+      body.appendChild(row);
+    }
+    root.appendChild(body);
+    if (todayRow) requestAnimationFrame(() => { body.scrollTop = todayRow.offsetTop; });
     return root;
   }
 
@@ -432,6 +491,8 @@
     document.documentElement.dataset.theme = THEMES.some((x) => x.id === t) ? t : DEFAULT_THEME;
     document.documentElement.dataset.scheme = dark ? 'dark' : 'light';
     document.documentElement.dataset.size = cfg('textSize', 'normal');
+    HOUR = Number(cfg('hourH', 60));
+    document.documentElement.style.setProperty('--hour', `${HOUR}px`);
     const css = getComputedStyle(document.documentElement);
     const meta = document.querySelector('meta[name=theme-color]');
     if (meta) meta.content = (css.getPropertyValue('--head-bg') || css.getPropertyValue('--bg')).trim();
@@ -536,6 +597,8 @@
         ${row('予定の文字', sel('textSize', 'normal', [['small', '小'], ['normal', '標準'], ['large', '大']]))}`)}
       ${group('view', '表示', `
         ${row('起動時の画面', sel('startView', 'last', [['last', '前回の画面'], ['day', '日'], ['week', '週'], ['month', '月']]))}
+        ${row('週の表示', sel('weekStyle', 'grid', [['grid', '時間軸'], ['list', '一覧']]))}
+        ${row('1時間の高さ', sel('hourH', 60, [[48, '低い'], [60, '標準'], [76, '高い'], [96, 'とても高い']]))}
         ${row('週の始まり', sel('weekStart', 0, [[0, '日曜'], [1, '月曜']]))}
         ${row('最初に見せる時刻', sel('startHour', 'now', [['now', '今の時刻の近く'], [6, '6時'], [7, '7時'], [8, '8時'], [9, '9時']]))}
         ${row('月の1マスの件数', sel('monthMax', 3, [[2, '2件'], [3, '3件'], [4, '4件'], [5, '5件']]))}`)}
@@ -568,10 +631,10 @@
     sh.querySelectorAll('.mgroup').forEach((d) => d.addEventListener('toggle', () => { if (d.open) menuOpen.add(d.dataset.g); else menuOpen.delete(d.dataset.g); }));
     sh.querySelectorAll('select.cfg').forEach((x) => x.onchange = () => {
       const k = x.dataset.k;
-      const v = ['weekStart', 'monthMax'].includes(k) ? Number(x.value) : x.value;
+      const v = ['weekStart', 'monthMax', 'hourH'].includes(k) ? Number(x.value) : x.value;
       setCfg(k, v);
-      if (k === 'textSize') applyTheme();
-      if (['weekStart', 'monthMax', 'startHour'].includes(k)) { state.scrollTop = null; load(); }
+      if (k === 'textSize' || k === 'hourH') applyTheme();
+      if (['weekStart', 'monthMax', 'startHour', 'hourH', 'weekStyle'].includes(k)) { state.scrollTop = null; load(); }
     });
     sh.querySelectorAll('.swatches button').forEach((b) => b.onclick = () => {
       const id = b.parentElement.dataset.id, cur = cfg('calColors', {});

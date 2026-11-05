@@ -1,6 +1,6 @@
 /* Koe の見た目。色はすべてテーマの変数（themes.css）から取る */
 :root{
-  --hour:52px;
+  --hour:60px;
   --font:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
   --font-head:var(--font);
   --r:10px;     /* 角の丸み（テーマで変える） */
@@ -373,3 +373,39 @@ html[data-size=small] .mc .m-ev{font-size:9px}
 html[data-size=large] .ev{font-size:13.5px}
 html[data-size=large] .tg.narrow .ev,html[data-size=large] .chip{font-size:12.5px}
 html[data-size=large] .mc .m-ev{font-size:11.5px}
+
+/* 週表示を読みやすく：名前は上詰め・折り返し・スクロールしても見える */
+.ev{display:block;overflow:hidden;overflow:clip;cursor:pointer;padding:0}
+.ev-in{position:sticky;top:0;padding:3px 3px 2px 5px}
+.ev-title{overflow-wrap:anywhere;word-break:break-all;line-height:1.22}
+.tg.narrow .ev{white-space:normal;padding:0}
+.tg.narrow .ev > *{white-space:normal;overflow:visible}
+.tg.narrow .ev-in{padding:2px 2px 1px 3px}
+.tg.narrow .ev .p{font-size:9.5px;line-height:1.2;overflow-wrap:anywhere;word-break:break-all}
+.tg.narrow .chip{white-space:normal;word-break:break-all;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:10.5px;line-height:1.2;text-overflow:clip}
+.tg-allday{max-height:92px;overflow-y:auto}
+.week-toggle{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;color:var(--link);font-size:9.5px;font-weight:700}
+.week-toggle svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+/* 週の一覧表示 */
+.wl{flex:1;min-height:0;display:flex;flex-direction:column}
+.wl-bar{display:flex;justify-content:flex-end;padding:4px 10px 2px;border-bottom:1px solid var(--line)}
+.wl-bar .week-toggle{flex-direction:row;gap:4px;font-size:12px;padding:3px 6px}
+.wl-body{flex:1;min-height:0;overflow-y:auto;position:relative}
+.wl-row{display:flex;align-items:stretch;border-bottom:1px solid var(--line);min-height:62px}
+.wl-row.today{background:var(--today-col)}
+.wl-day{flex:none;width:52px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:7px 0 4px;border-right:1px solid var(--line2)}
+.wl-day b{font-size:21px;line-height:1.1;font-family:var(--font-num,var(--font));color:var(--fg)}
+.wl-day span{font-size:11px;font-weight:700;color:var(--muted)}
+.wl-row.sun .wl-day b,.wl-row.sun .wl-day span,.wl-row.holiday .wl-day b,.wl-row.holiday .wl-day span{color:var(--sun)}
+.wl-row.sat .wl-day b,.wl-row.sat .wl-day span{color:var(--sat)}
+.wl-row.today .wl-day b{color:var(--today)}
+.wl-items{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;padding:5px 8px 6px}
+.wl-hol{font-size:12px;font-weight:700;color:var(--sun)}
+.wl-ev{display:flex;align-items:flex-start;gap:8px;width:100%;text-align:left;padding:4px 6px 4px 7px;border-radius:7px;background:color-mix(in srgb,var(--c) var(--tint,24%),var(--bg));border-left:3px solid var(--c);color:var(--fg)}
+.wl-time{flex:none;width:38px;font-size:12px;font-weight:700;color:var(--muted);line-height:1.35;font-variant-numeric:tabular-nums}
+.wl-title{flex:1;min-width:0;font-size:14px;font-weight:700;line-height:1.3;overflow-wrap:anywhere}
+.wl-title small{display:block;font-size:11.5px;font-weight:500;color:var(--muted)}
+.wl-task{background:transparent;border-left-color:transparent;padding-left:7px}
+.wl-task .wl-title{color:var(--task)}
+html[data-size=small] .wl-title{font-size:12.5px}
+html[data-size=large] .wl-title{font-size:16px}
