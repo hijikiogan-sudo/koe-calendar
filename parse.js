@@ -293,6 +293,46 @@
     else if (take(st, /年末\s*まで/)) rec.until = new Date(today.getFullYear(), 11, 31);
     return rec;
   }
+  // Google の繰り返し指定を読み取る。Koeで扱えない複雑なものは null
+  function parseRule(lines) {
+    const line = (lines || []).find((l) => /^RRULE:/.test(l));
+    if (!line) return null;
+    const CODE = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+    const kv = {};
+    line.slice(6).split(';').forEach((x) => { const [k, v] = x.split('='); kv[k] = v; });
+    const known = ['FREQ', 'INTERVAL', 'BYDAY', 'BYMONTHDAY', 'COUNT', 'UNTIL', 'WKST'];
+    if (Object.keys(kv).some((k) => !known.includes(k))) return null;
+    const r = { freq: kv.FREQ, interval: Number(kv.INTERVAL) || 1 };
+    if (kv.COUNT) r.count = Number(kv.COUNT);
+    if (kv.UNTIL) {
+      const m = kv.UNTIL.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})Z)?$/);
+      if (!m) return null;
+      r.until = m[4] ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6])) : new Date(+m[1], +m[2] - 1, +m[3]);
+      if (m[4]) r.until = startOfDay(r.until);
+    }
+    if (kv.FREQ === 'DAILY' || kv.FREQ === 'YEARLY') return kv.BYDAY || kv.BYMONTHDAY ? null : r;
+    if (kv.FREQ === 'WEEKLY') {
+      if (kv.BYMONTHDAY) return null;
+      const days = (kv.BYDAY || '').split(',').filter(Boolean).map((c) => CODE.indexOf(c));
+      if (days.includes(-1)) return null;
+      if (r.interval === 1 && days.slice().sort().join() === '1,2,3,4,5') { r.freq = 'WEEKDAYS'; return r; }
+      if (days.length) r.days = days.sort((a, b) => a - b);
+      return r;
+    }
+    if (kv.FREQ === 'MONTHLY') {
+      if (kv.BYDAY) {
+        const m = kv.BYDAY.match(/^(-1|[1-5])(SU|MO|TU|WE|TH|FR|SA)$/);
+        if (!m) return null;
+        r.monthMode = m[1] === '-1' ? 'last' : 'nth';
+        return r;
+      }
+      if (kv.BYMONTHDAY === '-1') { r.monthMode = 'end'; return r; }
+      r.monthMode = 'day';
+      return r;
+    }
+    return null;
+  }
+
   // Google カレンダーに渡す繰り返しの指定
   function recurRule(rec, date, allDay) {
     const CODE = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
@@ -593,6 +633,13 @@
       if (date && !st.s.replace(/の/g, '').trim()) return { cmd: 'show', view: 'day', date };
       return null;
     }
+    // 「メモ、牛乳が安かった」「明日のメモ、持ち物を確認」
+    if ((m = n.match(/^(?:(.+?)の)?(?:メモ|日記)(?:に|を)?[、,，:：\s]+(.+)$/))) {
+      if (!m[1]) return { cmd: 'memo', date: startOfDay(now), text: m[2].trim() };
+      const st = { s: m[1].trim(), ws: opts.weekStart || 0 };
+      const date = parseDate(st, now);
+      if (date && !st.s.trim()) return { cmd: 'memo', date, text: m[2].trim() };
+    }
     if ((m = n.match(/^(.+?)(?:の予定)?を?\s*(?:検索(?:して)?|探して|さがして|調べて)(?:ください)?$/))) return { cmd: 'search', word: m[1].trim() };
     const target = (w) => {
       const st = { s: w, ws: opts.weekStart || 0 };
@@ -619,7 +666,7 @@
     };
   }
 
-  const api = { parse, parseChange, parseCommand, normalize, applyDict, applyDictField, dictDiff, suggest, recurRule, untilBefore, splitRule };
+  const api = { parse, parseChange, parseCommand, normalize, applyDict, applyDictField, dictDiff, suggest, recurRule, parseRule, untilBefore, splitRule };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.KoeParse = api;
 })(typeof window !== 'undefined' ? window : globalThis);

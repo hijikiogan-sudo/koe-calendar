@@ -68,4 +68,19 @@ assert.match(rr('毎週水曜 教室 12月末まで'), /^event 11\/11 RRULE:FREQ
 assert.match(rr('毎日9時 体操 12月20日まで'), /FREQ=DAILY;UNTIL=20261220T145959Z \|体操$/);
 assert.equal(rr('毎週平日9時 朝会'), 'event 11/5 RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR |朝会');
 assert.equal(parse('第3回 説明会 明日10時', { now, calendars: [] }).recur, null);
+// Googleの繰り返し指定の読み取り
+const { parseRule } = require('../parse.js');
+assert.deepEqual(parseRule(['RRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=5']), { freq: 'WEEKLY', interval: 1, count: 5, days: [1, 3] });
+assert.deepEqual(parseRule(['RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=FR']), { freq: 'WEEKLY', interval: 2, days: [5] });
+assert.deepEqual(parseRule(['RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR']), { freq: 'WEEKDAYS', interval: 1 });
+assert.deepEqual(parseRule(['RRULE:FREQ=MONTHLY;BYDAY=2TU']), { freq: 'MONTHLY', interval: 1, monthMode: 'nth' });
+assert.deepEqual(parseRule(['RRULE:FREQ=MONTHLY;BYDAY=-1FR']), { freq: 'MONTHLY', interval: 1, monthMode: 'last' });
+assert.deepEqual(parseRule(['RRULE:FREQ=MONTHLY;BYMONTHDAY=-1']), { freq: 'MONTHLY', interval: 1, monthMode: 'end' });
+assert.deepEqual(parseRule(['EXDATE:20260101', 'RRULE:FREQ=DAILY;INTERVAL=3']), { freq: 'DAILY', interval: 3 });
+assert.equal(parseRule(['RRULE:FREQ=MONTHLY;BYDAY=MO,TU;BYSETPOS=1']), null);
+assert.equal(parseRule(['RRULE:FREQ=YEARLY;UNTIL=20271231']).until.getFullYear(), 2027);
+// メモの命令
+assert.deepEqual(c('メモ、牛乳が安かった'), { cmd: 'memo', date: '11/5', text: '牛乳が安かった' });
+assert.deepEqual(c('明日のメモ、持ち物を確認'), { cmd: 'memo', date: '11/6', text: '持ち物を確認' });
+assert.equal(c('メモ帳を買う'), null);
 console.log('命令・分割・数日・週の始まり・繰り返し OK');

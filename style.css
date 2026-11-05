@@ -451,3 +451,20 @@ body.is-dragging{overflow:hidden;touch-action:none}
 .runit{font-size:14px;white-space:nowrap}
 #c-rint,#c-rcount{flex:0 0 72px}
 #c-rend{flex:0 0 auto}
+
+/* 予定の長さを変える持ち手 */
+.ev-grip{position:absolute;left:0;right:0;bottom:0;height:12px;z-index:2;cursor:ns-resize}
+.ev-grip::after{content:"";position:absolute;left:50%;bottom:3px;width:16px;height:2.5px;margin-left:-8px;border-radius:2px;background:var(--c);opacity:.7}
+/* メモ */
+.memo-bar{display:flex;gap:8px;align-items:flex-start;width:100%;text-align:left;padding:7px 12px;border-bottom:1px solid var(--line);font-size:13.5px;line-height:1.45;background:transparent;flex:none}
+.memo-text{flex:1;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.memo-text.empty{color:var(--muted)}
+.td .memo-bar{background:var(--surface);border:1px solid var(--line);border-radius:10px;margin-bottom:12px;padding:9px 12px}
+.memo-input{width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:inherit;font-size:16px;line-height:1.6;background:var(--field);color:var(--fg);color-scheme:var(--scheme);resize:vertical}
+.mc{position:relative}
+.mc .rk{position:absolute;top:4px;right:3px;font-size:8px;color:var(--muted);line-height:1;font-weight:500}
+.mc-memo{position:absolute;top:3px;right:24px;font-size:9px;line-height:1}
+.dh{position:relative}
+.dh-memo{position:absolute;top:3px;right:2px;font-size:8px;line-height:1}
+.dp-memo{display:block;width:100%;text-align:left;padding:7px 12px;font-size:13px;line-height:1.4;color:var(--muted);border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent}
+.dh .rk{display:block;font-size:8.5px;color:var(--muted);font-weight:500;margin-top:1px;letter-spacing:0}
