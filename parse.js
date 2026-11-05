@@ -99,6 +99,9 @@
     return cals.find((c) => /自分用/.test(c.name)) || cals.find((c) => c.primary) || cals[0] || null;
   }
 
+  // 週の最初の日（ws：0=日曜始まり、1=月曜始まり）
+  const weekBase = (today, ws) => addDays(today, -((today.getDay() - (ws || 0) + 7) % 7));
+
   // ---- 日付 ----
   function parseDate(st, now) {
     const today = startOfDay(now);
@@ -120,18 +123,17 @@
       return addDays(today, off);
     }
     if ((m = take(st, new RegExp(`(今週|来週|再来週)の?\\s*([${WD}])曜日?`)))) {
-      const sunday = addDays(today, -today.getDay());
       const week = { 今週: 0, 来週: 7, 再来週: 14 }[m[1]];
-      return addDays(sunday, week + WD.indexOf(m[2]));
+      return addDays(weekBase(today, st.ws), week + ((WD.indexOf(m[2]) - (st.ws || 0) + 7) % 7));
     }
     // 「今週末」「来週」「月末」など。「年末調整」のような言葉は日付にしない
     const B = '(?=$|[\\s、,，。]|に|の|まで|は|で|から)';
     if ((m = take(st, new RegExp(`(今週|来週|再来週)(末|中)${B}`)))) {
-      return addDays(addDays(today, -today.getDay()), { 今週: 0, 来週: 7, 再来週: 14 }[m[1]] + 6);
+      return addDays(weekBase(today, st.ws), { 今週: 0, 来週: 7, 再来週: 14 }[m[1]] + ((6 - (st.ws || 0) + 7) % 7));
     }
     if ((m = take(st, new RegExp(`週末${B}`)))) return addDays(today, 6 - today.getDay());
     if ((m = take(st, new RegExp(`(来週|再来週)${B}`)))) {
-      return addDays(addDays(today, -today.getDay()), (m[1] === '来週' ? 7 : 14) + 1); // その週の月曜
+      return addDays(weekBase(today, st.ws), (m[1] === '来週' ? 7 : 14) + ((1 - (st.ws || 0) + 7) % 7)); // その週の月曜
     }
     if ((m = take(st, new RegExp(`(今月|来月|再来月)(末|頭|初め|始め)${B}`)))) {
       const off = { 今月: 0, 来月: 1, 再来月: 2 }[m[1]];
@@ -170,6 +172,16 @@
   function parseSpan(st, now) {
     const today = startOfDay(now);
     let m;
+    // 「12月1日10時から3日15時まで」「1日10時から12月3日15時」
+    const fromTo = `\\s*${T}\\s*(?:から|〜)\\s*(?:(\\d{1,2})\\s*[月/]\\s*)?(\\d{1,2})日\\s*${T}\\s*(?:まで)?`;
+    if ((m = take(st, new RegExp(`(?:(\\d{1,2})\\s*[月/]\\s*)?(\\d{1,2})日${fromTo}`)))) {
+      let a;
+      if (m[1]) { a = new Date(today.getFullYear(), Number(m[1]) - 1, Number(m[2])); if (a < today) a = new Date(a.getFullYear() + 1, a.getMonth(), a.getDate()); }
+      else a = nearestDay(Number(m[2]), today);
+      let b = new Date(a.getFullYear(), m[6] ? Number(m[6]) - 1 : a.getMonth(), Number(m[7]));
+      if (b < a) b = new Date(b.getFullYear(), b.getMonth() + (m[6] ? 12 : 1), b.getDate());
+      return { date: a, spanDays: 1, timed: { start: toMin(m[3], m[4], m[5], true), end: toMin(m[8], m[9], m[10]), endDays: daysBetween(a, b), endSaid: true } };
+    }
     if ((m = take(st, /(\d{1,2})\s*[月/]\s*(\d{1,2})日?\s*(?:から|〜)\s*(?:(\d{1,2})\s*[月/]\s*)?(\d{1,2})日?(?:まで)?(?![\d:時分])/))) {
       let a = new Date(today.getFullYear(), Number(m[1]) - 1, Number(m[2]));
       if (a < today) a = new Date(a.getFullYear() + 1, a.getMonth(), a.getDate());
@@ -185,7 +197,7 @@
     }
     if ((m = take(st, new RegExp(`(?:(今週|来週|再来週)の?\\s*)?([${WD}])曜日?\\s*(?:から|〜)\\s*(?:(?:今週|来週|再来週)の?\\s*)?([${WD}])曜日?(?:まで)?`)))) {
       const i = WD.indexOf(m[2]), j = WD.indexOf(m[3]);
-      const a = m[1] ? addDays(addDays(today, -today.getDay()), { 今週: 0, 来週: 7, 再来週: 14 }[m[1]] + i) : addDays(today, (i - today.getDay() + 7) % 7);
+      const a = m[1] ? addDays(weekBase(today, st.ws), { 今週: 0, 来週: 7, 再来週: 14 }[m[1]] + ((i - (st.ws || 0) + 7) % 7)) : addDays(today, (i - today.getDay() + 7) % 7);
       return { date: a, spanDays: ((j - i + 7) % 7) + 1 };
     }
     return null;
@@ -323,7 +335,7 @@
   function parse(text, opts = {}) {
     const now = opts.now || new Date();
     const cals = opts.calendars || [];
-    const st = { s: normalize(text) };
+    const st = { s: normalize(text), ws: opts.weekStart || 0 };
     const remind = parseRemind(st);
     const cal = parseCalendar(st, cals);
     const recur = parseRecur(st, now);
@@ -334,7 +346,7 @@
     let spanDays = span ? span.spanDays : 1;
     const nDays = !recur && !span && date && take(st, /(?:から\s*)?(\d+)\s*日間/);
     if (nDays) spanDays = Number(nDays[1]);
-    const time = parseTime(st);
+    const time = span && span.timed ? span.timed : parseTime(st);
     // 「場所は〇〇」とはっきり言ったら、そこを場所にする
     const said = take(st, new RegExp(`場所(?:は|が|:)\\s*([^、,，。]+?)(?:です)?(?=$|[、,，。])`));
     const rest = parseRest(st);
@@ -346,7 +358,7 @@
     // 休みの言葉（代休・有給など）は時刻がなくても終日の予定
     const dayOff = DAY_OFF.test(rest.title);
     // 繰り返し（ToDoリストでは使えない）と数日にまたがる予定も予定にする
-    const kind = !remind && !dayOff && !recur && !(spanDays > 1 && !taskWord) && (taskWord || (!time && !rest.location && !cal)) ? 'task' : 'event';
+    const kind = !remind && !dayOff && !recur && !(spanDays > 1 && !taskWord) && !(span && span.timed) && (taskWord || (!time && !rest.location && !cal)) ? 'task' : 'event';
     return {
       kind,
       taskWord,
@@ -361,6 +373,7 @@
       title: rest.title,
       remind, // null | {minutes: number|'prevday', label}
       spanDays,
+      endDays: time && time.endDays ? time.endDays : 0,
       recur: recur ? { freq: recur.freq, monthEnd: !!recur.monthEnd } : null,
     };
   }
@@ -371,7 +384,7 @@
   function parseChange(text, opts = {}) {
     const now = opts.now || new Date();
     const cals = opts.calendars || [];
-    const st = { s: normalize(text) };
+    const st = { s: normalize(text), ws: opts.weekStart || 0 };
     const out = {};
     if (take(st, /通知(?:を|は)?\s*(?:なし|無し|消して|消す|いらない|不要|オフ|外して)/)) out.remind = { minutes: '', label: '通知なし' };
     else { const r = parseRemind(st); if (r) out.remind = r; }
@@ -462,7 +475,49 @@
     return [...best.values()].sort((a, b) => b.score - a.score).slice(0, limit).map((x) => x.text);
   }
 
-  const api = { parse, parseChange, normalize, applyDict, applyDictField, dictDiff, suggest, recurRule };
+  // ---- 声の命令（登録以外）----
+  // 「明日の予定は？」「歯医者を削除」「書類を出すを完了」「会議を検索」。当てはまらなければ null（＝登録）
+  function parseCommand(text, opts = {}) {
+    const now = opts.now || new Date();
+    const n = normalize(text).replace(/[。\s]+$/, '');
+    let m;
+    if ((m = n.match(/^(.+?)の予定(?:は|を)?\s*(?:教えて|見せて|確認(?:して)?|何|なに|ある|ありますか|どう)*\s*(?:ですか|ください)?[?？]?$/))) {
+      const w = m[1].trim();
+      if (/^(今週|来週|再来週)$/.test(w)) return { cmd: 'show', view: 'week', date: addDays(startOfDay(now), { 今週: 0, 来週: 7, 再来週: 14 }[w]) };
+      if (/^(今月|来月|再来月)$/.test(w)) return { cmd: 'show', view: 'month', date: new Date(now.getFullYear(), now.getMonth() + { 今月: 0, 来月: 1, 再来月: 2 }[w], 1) };
+      const st = { s: w, ws: opts.weekStart || 0 };
+      const date = parseDate(st, now);
+      if (date && !st.s.replace(/の/g, '').trim()) return { cmd: 'show', view: 'day', date };
+      return null;
+    }
+    if ((m = n.match(/^(.+?)(?:の予定)?を?\s*(?:検索(?:して)?|探して|さがして|調べて)(?:ください)?$/))) return { cmd: 'search', word: m[1].trim() };
+    const target = (w) => {
+      const st = { s: w, ws: opts.weekStart || 0 };
+      const date = parseDate(st, now);
+      return { date, word: st.s.replace(/^の/, '').replace(/の予定$/, '').trim() };
+    };
+    if ((m = n.match(/^(.+?)を\s*(?:削除(?:して)?|消して|キャンセルして|取り消して)(?:ください)?$/))) return { cmd: 'delete', ...target(m[1]) };
+    if ((m = n.match(/^(.+?)を?\s*(?:完了(?:にして|して|した)?|終わった|済んだ)(?:ください)?$/))) return { cmd: 'done', ...target(m[1]) };
+    return null;
+  }
+
+  // ---- 繰り返しの分割（「この日以降」を変えるとき）----
+  const pad2 = (x) => String(x).padStart(2, '0');
+  function untilBefore(start, allDay) {
+    if (allDay) { const d = addDays(start, -1); return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`; }
+    return new Date(start.getTime() - 1000).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  }
+  // lines：Googleの recurrence。old は今の予定を手前で終わらせる指定、next は新しい続きの指定
+  function splitRule(lines, until, remaining) {
+    const conv = (l, f) => (/^RRULE:/.test(l) ? f(l) : l);
+    const strip = (l) => l.replace(/;(?:UNTIL|COUNT)=[^;]*/g, '').replace(/:(?:UNTIL|COUNT)=[^;]*;/, ':');
+    return {
+      old: lines.map((l) => conv(l, (r) => `${strip(r)};UNTIL=${until}`)),
+      next: lines.map((l) => conv(l, (r) => (/;COUNT=/.test(r) || /:COUNT=/.test(r) ? `${strip(r)};COUNT=${Math.max(remaining || 1, 1)}` : r))),
+    };
+  }
+
+  const api = { parse, parseChange, parseCommand, normalize, applyDict, applyDictField, dictDiff, suggest, recurRule, untilBefore, splitRule };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.KoeParse = api;
 })(typeof window !== 'undefined' ? window : globalThis);

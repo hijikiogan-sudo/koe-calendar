@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '202611051312'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
+  const APP_VERSION = '202611051322'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
   const SCOPES = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/tasks';
   const API = 'https://www.googleapis.com/calendar/v3';
   const WD = ['日', '月', '火', '水', '木', '金', '土'];
@@ -17,7 +17,8 @@
 
   // 設定（この端末に保存）
   const cfg = (k, d) => store.get(`cfg.${k}`, d);
-  const setCfg = (k, v) => store.set(`cfg.${k}`, v);
+  const setCfg = (k, v) => { store.set(`cfg.${k}`, v); touchSync(); };
+  const pOpts = (o) => ({ weekStart: cfg('weekStart', 0), ...o });
   const CAL_COLORS = ['#d9534f', '#e8833a', '#d4a72c', '#4b9e5f', '#2a9d8f', '#3b7ddd', '#6a5acd', '#c0628a', '#7a6a58'];
   function applyCalColors(cals) {
     const colors = cfg('calColors', {});
@@ -323,8 +324,44 @@
     pop.querySelector('.dp-day').onclick = () => { closeDayPop(); state.anchor = d; setView('day'); };
   }
 
+  // ---------- 声の命令 ----------
+  async function runCommand(cmd, text) {
+    if (cmd.cmd === 'show') { state.anchor = startOfDay(cmd.date); state.scrollTop = null; setView(cmd.view); $('#intext').value = ''; return; }
+    if (cmd.cmd === 'search') { $('#intext').value = ''; openSearch(cmd.word); return; }
+    const w = (cmd.word || '').toLowerCase();
+    const isDone = cmd.cmd === 'done';
+    let evs = [];
+    if (!isDone) {
+      try { evs = await searchEvents(cmd.word); } catch (err) {
+        if (err && err.auth) { connectionLost(); return; }
+        evs = state.events.filter((e) => e.title.toLowerCase().includes(w));
+      }
+      const today = startOfDay(new Date());
+      evs = evs.filter((e) => (cmd.date ? sameDay(e.start, cmd.date) : e.end >= today)).sort((a, b) => a.start - b.start).slice(0, 20);
+    }
+    const tks = state.tasks.filter((t) => t.title.toLowerCase().includes(w));
+    openSheet(`
+      <h2>${isDone ? 'どれを完了にしますか？' : 'どれを削除しますか？'}</h2>
+      <p class="heard">「${esc(text)}」</p>
+      <ul class="search-res">
+        ${tks.map((t, i) => `<li data-t="${i}"><span class="dp-time">タスク</span><span class="dp-title dp-task">☐ ${esc(t.title)}<small>${t.due ? md(t.due) : '期限なし'}</small></span></li>`).join('')}
+        ${evs.map((ev, i) => `<li data-e="${i}"><span class="dp-time">${ev.start.getMonth() + 1}/${ev.start.getDate()}</span><span class="dp-title" style="--c:${ev.color}">${esc(ev.title)}<small>${ev.allDay ? '終日' : hm(ev.start)}${ev.location ? ` ・ ${esc(ev.location)}` : ''}</small></span></li>`).join('')}
+        ${!evs.length && !tks.length ? '<li class="dp-empty">見つかりませんでした</li>' : ''}
+      </ul>
+      <button class="act" id="c-asnew">「${esc(text)}」を新しく登録する</button>
+      <button class="act" id="c-none">やめる</button>`);
+    $('#sheet').querySelectorAll('li[data-e]').forEach((li) => li.onclick = () => openEvent(evs[Number(li.dataset.e)])); // 削除の確認は詳細画面で
+    $('#sheet').querySelectorAll('li[data-t]').forEach((li) => li.onclick = () => {
+      const t = tks[Number(li.dataset.t)];
+      if (isDone) { closeSheet(); doComplete(t); } else openTask(t);
+    });
+    $('#c-asnew').onclick = () => openConfirm(text, null, true);
+    $('#c-none').onclick = closeSheet;
+    $('#intext').value = '';
+  }
+
   // ---------- 検索 ----------
-  function openSearch() {
+  function openSearch(initial) {
     openSheet(`<h2>検索</h2>
       <input class="search-input" id="s-q" type="search" placeholder="予定名や場所、タスクで探す" autocomplete="off" enterkeyhint="search">
       <ul class="search-res" id="s-res"></ul>`);
@@ -362,6 +399,7 @@
       box.querySelectorAll('li[data-t]').forEach((li) => li.onclick = () => openTask(tks[Number(li.dataset.t)]));
     };
     q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 350); });
+    if (typeof initial === 'string' && initial) { q.value = initial; run(); }
   }
   async function searchEvents(word) {
     if (state.demo) {
@@ -408,9 +446,10 @@
           <input id="e-text" type="text" placeholder="変更を話すか打つ（例：15時からに変更）" autocomplete="off" enterkeyhint="send">
           <button type="button" class="mic-s" id="e-mic" aria-label="声で変更"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
         </form>
-        ${ev.recurring ? '<p class="note">繰り返しの予定です。変更・削除はこの日の分だけに効きます。</p>' : ''}
+        ${ev.recurring ? '<p class="note">繰り返しの予定です。変更・削除のときに範囲を選べます。</p>' : ''}
         <div class="e-acts" id="e-acts">
           <button class="act" id="e-edit">手で直す</button>
+          <button class="act" id="e-dup">複製</button>
           <button class="act danger" id="e-del">削除</button>
         </div>`
         : '<p class="note">このカレンダーは見るだけで、変更や削除はできません。</p>'}`);
@@ -419,27 +458,54 @@
     $('#e-form').onsubmit = (e) => {
       e.preventDefault();
       const t = $('#e-text').value.trim();
-      if (t) { $('#e-text').blur(); openEdit(ev, t); }
+      if (t) { $('#e-text').blur(); withScope(ev, 'どの範囲を変更しますか？', (sc) => { if (!openEdit(ev, t, sc)) openEvent(ev); }); }
     };
-    $('#e-mic').onclick = () => startVoice((t) => { if (!openEdit(ev, t)) openEvent(ev); }, '変更したい内容を話してください（例：15時からに変更）');
-    $('#e-edit').onclick = () => openEdit(ev, '');
-    // 削除は2段階で確認
-    $('#e-del').onclick = () => {
-      $('#e-acts').innerHTML = `
-        <p class="confirm-q">本当に削除しますか？<br><small>「${esc(ev.title)}」${when}</small></p>
+    $('#e-mic').onclick = () => startVoice((t) => withScope(ev, 'どの範囲を変更しますか？', (sc) => { if (!openEdit(ev, t, sc)) openEvent(ev); }), '変更したい内容を話してください（例：15時からに変更）');
+    $('#e-edit').onclick = () => withScope(ev, 'どの範囲を変更しますか？', (sc) => openEdit(ev, '', sc));
+    $('#e-dup').onclick = () => openDuplicate(ev);
+    // 削除は2段階で確認（繰り返しは先に範囲を選ぶ）
+    $('#e-del').onclick = () => withScope(ev, 'どの範囲を削除しますか？', (sc) => confirmDelete(ev, sc, when));
+  }
+
+  // 繰り返しの予定だけ、範囲を聞いてから進む
+  const SCOPE_LABEL = { this: 'この日だけ', following: 'この日以降すべて', all: 'すべての日' };
+  function withScope(ev, question, next) {
+    if (!ev.recurring || state.demo) { next('this'); return; }
+    openSheet(`
+      <h2>${question}</h2>
+      <p class="heard">繰り返しの予定「${esc(ev.title)}」（${md(ev.start)}）</p>
+      ${Object.entries(SCOPE_LABEL).map(([k, l]) => `<button class="act scope" data-s="${k}">${l}</button>`).join('')}
+      <button class="act" id="s-cancel">やめる</button>`);
+    $('#sheet').querySelectorAll('.scope').forEach((b) => b.onclick = () => next(b.dataset.s));
+    $('#s-cancel').onclick = () => openEvent(ev);
+  }
+
+  function confirmDelete(ev, scope, when) {
+    const range = ev.recurring ? `<br><b>${SCOPE_LABEL[scope]}</b>を削除します` : '';
+    openSheet(`
+      <h2>${esc(ev.title)}</h2>
+      <div class="e-acts"><p class="confirm-q">本当に削除しますか？<br><small>「${esc(ev.title)}」${when}${range}</small></p>
         <button class="act danger-solid" id="e-del2">削除する</button>
-        <button class="act" id="e-keep">やめる</button>`;
-      $('#e-keep').onclick = () => openEvent(ev);
-      $('#e-del2').onclick = async () => {
-        const b = $('#e-del2'); b.disabled = true; b.textContent = '削除中…';
-        try {
-          await deleteEvent(ev);
-          closeSheet();
-          load();
-          showUndo(`削除しました：${ev.title}`, async () => { await undeleteEvent(ev); load(); });
-        } catch (err) { b.disabled = false; b.textContent = '削除する'; handleError(err); }
-      };
+        <button class="act" id="e-keep">やめる</button></div>`);
+    $('#e-keep').onclick = () => openEvent(ev);
+    $('#e-del2').onclick = async () => {
+      const b = $('#e-del2'); b.disabled = true; b.textContent = '削除中…';
+      try {
+        const undo = await deleteEvent(ev, scope);
+        closeSheet();
+        load();
+        showUndo(`削除しました：${ev.title}`, async () => { await undo(); load(); });
+      } catch (err) { b.disabled = false; b.textContent = '削除する'; handleError(err); }
     };
+  }
+
+  // 同じ内容で別の予定を作る
+  function openDuplicate(ev) {
+    const v = eventToForm(ev);
+    openForm(v, {
+      heading: '複製して登録しますか？', busyLabel: '登録中…', fixedKind: true, keepRemind: true, allowRecur: true,
+      onOk: async (out) => { await insertEvent({ ...out, description: ev.description }); noteCorpus(out); toast(`複製しました：${out.title}`); },
+    });
   }
 
   // ---------- 新しい版の確認 ----------
@@ -504,10 +570,28 @@
   const getDict = () => store.get('dict', []);
   // 辞書はGoogle ToDoの「Koe設定」リストに置いて、iPhoneとパソコンで共有する
   let dictPushTimer;
-  function setDict(d) {
-    store.set('dict', d); store.set('dictAt', Date.now());
+  function setDict(d) { store.set('dict', d); touchSync(); }
+  // 辞書か設定が変わったら、少し待ってGoogle ToDoに保存する
+  function touchSync() {
+    store.set('dictAt', Date.now());
     clearTimeout(dictPushTimer);
-    dictPushTimer = setTimeout(() => pushDict().catch((err) => console.warn('辞書の保存に失敗', err)), 800);
+    dictPushTimer = setTimeout(() => pushDict().catch((err) => console.warn('設定の保存に失敗', err)), 800);
+  }
+  function syncedSettings() {
+    const c = {};
+    try { Object.keys(localStorage).filter((k) => k.startsWith('cfg.')).forEach((k) => { c[k.slice(4)] = store.get(k, null); }); } catch {}
+    return { cfg: c, theme: store.get('theme', null), mode: store.get('mode', null), hidden: store.get('hiddenCals', null) };
+  }
+  function applySynced(r) {
+    if (!r || !r.settings) return;
+    const x = r.settings;
+    Object.entries(x.cfg || {}).forEach(([k, v]) => store.set(`cfg.${k}`, v)); // ここでは保存し直さない
+    if (x.theme) store.set('theme', x.theme);
+    if (x.mode) store.set('mode', x.mode);
+    if (x.hidden) { store.set('hiddenCals', x.hidden); state.hidden = new Set(x.hidden); state.hiddenSaved = true; }
+    applyTheme();
+    applyCalColors(state.calendars);
+    if ($('#sheet').hidden && $('#voice').hidden) load();
   }
   async function settingsList(create) {
     const ls = await api(`${TASKS_API}/users/@me/lists?maxResults=100`);
@@ -520,7 +604,7 @@
     const list = await settingsList(true);
     const path = `${TASKS_API}/lists/${encodeURIComponent(list.id)}/tasks`;
     const old = (await api(`${path}?maxResults=100&showHidden=true`)).items || [];
-    const json = JSON.stringify({ at: store.get('dictAt', Date.now()), items: getDict() });
+    const json = JSON.stringify({ at: store.get('dictAt', Date.now()), items: getDict(), settings: syncedSettings() });
     const chunks = json.match(/[\s\S]{1,7000}/g) || [];
     await Promise.all(old.filter((t) => /^dict-/.test(t.title || '')).map((t) => api(`${path}/${encodeURIComponent(t.id)}`, 'DELETE')));
     for (let i = 0; i < chunks.length; i++) await api(path, 'POST', { title: `dict-${String(i).padStart(3, '0')}`, notes: chunks[i] });
@@ -530,16 +614,17 @@
     try {
       const list = await settingsList(false);
       const local = getDict(), localAt = store.get('dictAt', 0);
-      if (!list) { if (local.length) await pushDict(); return; }
+      if (!list) { if (local.length || localAt) await pushDict(); return; }
       const items = ((await api(`${TASKS_API}/lists/${encodeURIComponent(list.id)}/tasks?maxResults=100`)).items || [])
         .filter((t) => /^dict-/.test(t.title || '')).sort((a, b) => (a.title < b.title ? -1 : 1));
-      if (!items.length) { if (local.length) await pushDict(); return; }
+      if (!items.length) { if (local.length || localAt) await pushDict(); return; }
       const remote = JSON.parse(items.map((t) => t.notes || '').join(''));
       if (!localAt) { // この端末で初めて：両方の登録を合わせる
         const merged = [...remote.items, ...local.filter((x) => !remote.items.some((r) => r.from === x.from))];
         store.set('dict', merged); store.set('dictAt', Date.now());
+        applySynced(remote);
         if (merged.length !== remote.items.length) await pushDict();
-      } else if (remote.at > localAt) { store.set('dict', remote.items); store.set('dictAt', remote.at); }
+      } else if (remote.at > localAt) { store.set('dict', remote.items); store.set('dictAt', remote.at); applySynced(remote); }
       else if (remote.at < localAt) await pushDict();
     } catch (err) { console.warn('辞書の共有に失敗', err); }
   }
@@ -626,7 +711,7 @@
         ${state.demo
           ? (cfgClientId() ? '<button class="act" id="m-login">Googleでログインする</button>' : '<p class="note">Googleとつなぐには config.js にクライアントIDを設定します（SETUP.md 参照）。</p>')
           : '<button class="act" id="m-logout">ログアウト</button>'}`)}
-      <p class="note">Koe ・ 版 ${APP_VERSION}<br>設定はこの端末に保存します（辞書だけ共有）。</p>`);
+      <p class="note">Koe ・ 版 ${APP_VERSION}<br>辞書と設定は、Google ToDoの「Koe設定」リストでiPhoneとパソコンに共有します。</p>`);
     const sh = $('#sheet');
     sh.querySelectorAll('.mgroup').forEach((d) => d.addEventListener('toggle', () => { if (d.open) menuOpen.add(d.dataset.g); else menuOpen.delete(d.dataset.g); }));
     sh.querySelectorAll('select.cfg').forEach((x) => x.onchange = () => {
@@ -646,11 +731,11 @@
       load();
     });
     sh.querySelectorAll('.th').forEach((b) => b.onclick = () => {
-      store.set('theme', b.dataset.t); applyTheme();
+      store.set('theme', b.dataset.t); touchSync(); applyTheme();
       sh.querySelectorAll('.th').forEach((x) => x.classList.toggle('on', x === b));
     });
     sh.querySelectorAll('.modes button').forEach((b) => b.onclick = () => {
-      store.set('mode', b.dataset.m); applyTheme();
+      store.set('mode', b.dataset.m); touchSync(); applyTheme();
       sh.querySelectorAll('.modes button').forEach((x) => x.classList.toggle('on', x === b));
     });
     sh.querySelectorAll('.dict .del').forEach((b) => b.onclick = () => {
@@ -669,7 +754,7 @@
       const id = b.dataset.id;
       state.hidden.has(id) ? state.hidden.delete(id) : state.hidden.add(id);
       b.classList.toggle('on');
-      store.set('hiddenCals', [...state.hidden]);
+      store.set('hiddenCals', [...state.hidden]); touchSync();
       load();
     });
     const showCorpus = () => {
@@ -818,7 +903,7 @@
       start: allDay ? parseYMD(it.start.date) : new Date(it.start.dateTime),
       end: allDay ? parseYMD(it.end.date) : new Date(it.end.dateTime),
       color: cal.color, text: cal.text,
-      reminders: it.reminders, recurring: !!it.recurringEventId,
+      reminders: it.reminders, recurring: !!it.recurringEventId, masterId: it.recurringEventId || null,
     };
   }
 
@@ -895,6 +980,7 @@
     const end = v.allDay || v.end == null ? 10 * 60 : v.end;
     const ch = (k) => (opt.changed && opt.changed.has(k) ? ' changed' : '');
     let kind = v.kind || 'event';
+    const hasEnd = v.spanDays > 1 || v.endDays > 0;
 
     openSheet(`
       <h2>${opt.heading}</h2>
@@ -921,8 +1007,8 @@
         <span>〜</span>
         <input id="c-end" type="time" value="${minToHM(end)}" ${v.allDay ? 'disabled' : ''}>
       </div></div>
-      ${v.endDays && !v.allDay ? `<p class="note ev-only" style="margin:4px 0 0;text-align:right">終わりは ${v.endDays}日後（${md(addDays(v.date || startOfDay(new Date()), v.endDays))}）の上記の時刻です</p>` : ''}
-      ${v.spanDays > 1 ? `<p class="note ev-only" style="margin:4px 0 0;text-align:right">${v.spanDays}日間（〜${md(addDays(v.date, v.spanDays - 1))}）の終日予定です</p>` : ''}
+      <div class="f ev-only" id="c-endrow" ${hasEnd ? '' : 'hidden'}><span class="fl">終わりの日</span><input id="c-enddate" type="date" value="${ymd(addDays(v.date || startOfDay(new Date()), v.allDay ? (v.spanDays || 1) - 1 : v.endDays || 0))}"></div>
+      ${opt.lockDate ? '<p class="note ev-only" style="margin:4px 0 0">この範囲では日付を変えられません。時間・内容・場所・通知は変えられます。</p>' : `<button type="button" class="link ev-only" id="c-endadd" style="margin-top:6px" ${hasEnd ? 'hidden' : ''}>＋ 別の日に終わる</button>`}
       ${opt.allowRecur ? `<label class="f ev-only"><span class="fl">繰り返し</span><select id="c-recur">${RECURS.map((r) => `<option value="${r.v}" ${r.v === (v.recur || '') ? 'selected' : ''}>${r.label}</option>`).join('')}</select></label>` : ''}
       ${!opt.fixedKind && state.taskLists.length > 1 ? `<div class="f task-only"><span class="fl">リスト</span><div class="cal-chips">${state.taskLists.map((l) => `<button type="button" class="cc lc${l.id === defaultList(v.listId) ? ' on' : ''}" data-id="${esc(l.id)}" style="--c:var(--task);--ct:var(--on-task)">${esc(l.title)}</button>`).join('')}</div></div>` : ''}
       <label class="f ev-only${ch('location')}"><span class="fl">場所</span><input id="c-loc" value="${esc(v.location || '')}" placeholder="なし"></label>
@@ -956,10 +1042,19 @@
       listId = b.dataset.id;
       sh.querySelectorAll('.cc.lc').forEach((x) => x.classList.toggle('on', x === b));
     });
+    if (opt.lockDate) { ['c-date', 'c-enddate', 'c-allday'].forEach((id) => { $('#' + id).disabled = true; }); }
+    if (opt.lockCal) sh.querySelectorAll('.cc:not(.lc)').forEach((b) => { b.disabled = true; b.style.opacity = b.classList.contains('on') ? 1 : .35; });
+    if ($('#c-endadd')) $('#c-endadd').onclick = () => { $('#c-endrow').hidden = false; $('#c-endadd').hidden = true; };
+    let prevDate = $('#c-date').value;
+    $('#c-date').addEventListener('change', () => { // 開始日を動かしたら終わりの日も同じだけ動かす
+      const a = parseYMD($('#c-date').value), o = parseYMD(prevDate), e = parseYMD($('#c-enddate').value);
+      if (!isNaN(a) && !isNaN(o) && !isNaN(e)) $('#c-enddate').value = ymd(addDays(e, Math.round((a - o) / 86400000)));
+      prevDate = $('#c-date').value;
+    });
     $('#c-nodue').onchange = (e) => { $('#c-date').disabled = e.target.checked; };
     $('#c-allday').onchange = (e) => { $('#c-start').disabled = $('#c-end').disabled = e.target.checked; };
     $('#c-start').onchange = () => { // 開始を動かしたら長さを保って終わりも動かす
-      if (v.endDays) return; // 日をまたぐ予定は終わりの日時を動かさない
+      if (!$('#c-endrow').hidden) return; // 日をまたぐ予定は終わりの日時を動かさない
       const s = hmToMin($('#c-start').value);
       $('#c-end').value = minToHM(s + Math.max(end - start, 30));
     };
@@ -983,6 +1078,13 @@
         monthEnd: !!v.monthEnd,
       };
       if (!out.noDue && isNaN(out.date)) { toast('日付を入れてください'); return; }
+      if (kind === 'event' && !isNaN(out.date)) {
+        const endVal = parseYMD($('#c-enddate').value);
+        const diff = $('#c-endrow').hidden || isNaN(endVal) ? 0 : Math.round((endVal - out.date) / 86400000);
+        if (diff < 0) { toast('終わりの日が開始より前になっています'); return; }
+        out.spanDays = out.allDay ? diff + 1 : 1;
+        out.endDays = out.allDay ? 0 : diff;
+      }
       const ok = $('#c-ok');
       ok.disabled = true; ok.textContent = opt.busyLabel || '保存中…';
       try {
@@ -1120,11 +1222,16 @@
 
   // 新しく登録する
   // slot: 長押しした枠 {date, start(分)|null}。言わなかった日付・時間をここから入れる
-  function openConfirm(text, slot) {
+  function openConfirm(text, slot, raw) {
     text = applyDict(text);
+    // 「明日の予定は？」「歯医者を削除」などの命令。枠を長押しして話した文は登録として扱う
+    if (!slot && !raw) {
+      const cmd = window.KoeParse.parseCommand(text, pOpts());
+      if (cmd) { runCommand(cmd, text); return; }
+    }
     const cals = writableCals();
     if (!cals.length) { toast('書き込めるカレンダーがありません'); return; }
-    const p = window.KoeParse.parse(text, { calendars: cals });
+    const p = window.KoeParse.parse(text, pOpts({ calendars: cals }));
     if (!p.calSaid && cals.some((c) => c.id === cfg('defCal', ''))) p.calId = cfg('defCal', '');
     if (p.kind === 'task' && !p.taskWord && cfg('noTimeKind', 'task') === 'event') p.kind = 'event'; // 時刻のない文の扱い
     p.title = applyDictField(p.title); p.location = applyDictField(p.location);
@@ -1141,7 +1248,7 @@
       kind: p.kind, calId: p.calId, title: p.title, date: p.date, noDue: p.kind === 'task' && !p.dateSaid && !slot,
       allDay: p.allDay, start: p.start, end: p.end,
       location: p.location, remind: p.remind ? String(p.remind.minutes) : cfg('defRemind', ''), remindLabel: p.remind && p.remind.label,
-      spanDays: p.spanDays, recur: p.recur ? p.recur.freq : '', monthEnd: !!(p.recur && p.recur.monthEnd),
+      spanDays: p.spanDays, endDays: p.endDays, recur: p.recur ? p.recur.freq : '', monthEnd: !!(p.recur && p.recur.monthEnd),
       listId: (p.calSaid && state.taskLists.find((l) => { const c = cals.find((x) => x.id === p.calId); return c && (c.name.includes(l.title) || l.title.includes(c.name)); }) || {}).id,
     }, {
       heading: 'この内容で登録しますか？', heard: text, busyLabel: '登録中…', allowRecur: true,
@@ -1232,8 +1339,16 @@
   // 表示している期間までに期限があるもの（期限切れを含む）と、期限なし
   function visibleTasks() {
     const [, e] = range();
-    return state.tasks.filter((t) => !t.due || t.due < e)
+    const list = state.tasks.filter((t) => !t.due || t.due < e)
       .sort((a, b) => (a.due ? 0 : 1) - (b.due ? 0 : 1) || (a.due && b.due ? a.due - b.due : 0));
+    // サブタスクは親のすぐ下に並べる
+    const ids = new Set(list.map((t) => t.id));
+    const out = [];
+    list.filter((t) => !t.parent || !ids.has(t.parent)).forEach((t) => {
+      out.push(t);
+      list.filter((c) => c.parent === t.id).forEach((c) => out.push(c));
+    });
+    return out;
   }
 
   function renderTasks() {
@@ -1252,7 +1367,7 @@
       <button class="tk-head" id="tk-toggle" aria-expanded="${open}"><b>タスク</b><span class="tk-n">${list.length}</span><span class="tk-arrow">${open ? '▾' : '▸'}</span></button>
       <ul class="tk-list" ${open ? '' : 'hidden'}>${list.map((t) => {
         const late = t.due && t.due < today;
-        return `<li data-id="${esc(t.id)}"><button class="tk-box" aria-label="完了にする"></button>
+        return `<li data-id="${esc(t.id)}" class="${t.parent && list.some((x) => x.id === t.parent) ? 'sub' : ''}"><button class="tk-box" aria-label="完了にする"></button>
           <button class="tk-title">${esc(t.title)}${state.taskLists.length > 1 && t.listTitle ? `<small>${esc(t.listTitle)}</small>` : ''}</button>
           <span class="tk-due${late ? ' late' : ''}">${t.due ? `${t.due.getMonth() + 1}/${t.due.getDate()}（${WD[t.due.getDay()]}）${late ? ' 期限切れ' : ''}` : '期限なし'}</span></li>`;
       }).join('') || '<li class="tk-empty">この期間のタスクはありません</li>'}</ul>`;
@@ -1326,13 +1441,15 @@
   }
 
   // 変更する（指示があればその項目だけ差し替えて確認画面へ）
-  function openEdit(ev, text) {
+  function openEdit(ev, text, scope = 'this') {
+    const locked = scope !== 'this'; // 全体やこの日以降は、日付を動かさない（繰り返しの規則とずれるため）
     const base = eventToForm(ev);
     const v = { ...base };
     const changed = new Set();
     if (text) {
       text = applyDict(text);
-      const c = window.KoeParse.parseChange(text, { calendars: writableCals() });
+      const c = window.KoeParse.parseChange(text, pOpts({ calendars: writableCals() }));
+      if (locked && c.date) { delete c.date; toast('この範囲では日付を変えられません。時間や内容は変えられます'); }
       if (!Object.keys(c).length) { toast('変更する内容が聞き取れませんでした。例：「15時からに変更」'); return false; }
       if (c.calId) { v.calId = c.calId; changed.add('calId'); }
       if (c.title !== undefined) { v.title = applyDictField(c.title); changed.add('title'); }
@@ -1348,9 +1465,10 @@
       if (c.remind) { v.remind = String(c.remind.minutes); v.remindLabel = c.remind.label; changed.add('remind'); }
     }
     openForm(v, {
-      heading: 'この内容に変更しますか？', heard: text, busyLabel: '変更中…', okLabel: '変更する', changed, keepRemind: true, fixedKind: true,
+      heading: ev.recurring ? `変更しますか？（${SCOPE_LABEL[scope]}）` : 'この内容に変更しますか？', heard: text, busyLabel: '変更中…', okLabel: '変更する', changed, keepRemind: true, fixedKind: true,
+      lockDate: locked, lockCal: ev.recurring && scope === 'this',
       keepLabel: ev.reminders && ev.reminders.overrides && ev.reminders.overrides.length > 1 ? `そのまま（通知${ev.reminders.overrides.length}件）` : '',
-      onOk: async (out) => { await updateEvent(ev, out); toast(`変更しました：${out.title}`); },
+      onOk: async (out) => { await updateEvent(ev, out, scope); toast(`変更しました：${out.title}`); },
     });
     return true;
   }
@@ -1373,6 +1491,7 @@
       const min = v.remind === 'prevday' ? (v.allDay ? 15 * 60 : 24 * 60) : v.remind ? Number(v.remind) : null;
       body.reminders = { useDefault: false, overrides: min != null ? [{ method: 'popup', minutes: min }] : [] };
     }
+    if (v.description) body.description = v.description;
     if (v.recur) { const rule = window.KoeParse.recurRule(v.recur, v.date, v.monthEnd); if (rule) body.recurrence = [rule]; }
     return { body, startDate: v.allDay ? v.date : at(v.start), endDate: v.allDay ? addDays(v.date, v.spanDays || 1) : at(endMin) };
   }
@@ -1386,11 +1505,11 @@
       return;
     }
     if (!body.location) delete body.location;
-    if (!body.reminders) body.reminders = { useDefault: false, overrides: [] };
+    if (!body.reminders) body.reminders = v.remind === 'default' ? { useDefault: true } : { useDefault: false, overrides: [] };
     await api(`/calendars/${encodeURIComponent(v.calId)}/events`, 'POST', body);
   }
 
-  async function updateEvent(ev, v) {
+  async function updateEvent(ev, v, scope = 'this') {
     const { body, startDate, endDate } = eventBody(v);
     if (state.demo) {
       const x = demoEvents().find((e) => e.id === ev.id);
@@ -1400,20 +1519,72 @@
       return;
     }
     // 通知を変えていなければ Google に送らない（複数の通知やメール通知をそのまま残す）
-    if (v.remind === 'default' || v.remind === eventToForm(ev).remind) delete body.reminders;
-    await api(`/calendars/${encodeURIComponent(ev.calId)}/events/${encodeURIComponent(ev.id)}`, 'PATCH', body);
-    if (v.calId !== ev.calId) {
-      await api(`/calendars/${encodeURIComponent(ev.calId)}/events/${encodeURIComponent(ev.id)}/move?destination=${encodeURIComponent(v.calId)}`, 'POST');
+    const keepReminders = v.remind === 'default' || v.remind === eventToForm(ev).remind;
+    if (keepReminders) delete body.reminders;
+    const evPath = (cal, id) => `/calendars/${encodeURIComponent(cal)}/events/${encodeURIComponent(id)}`;
+    if (scope !== 'this' && ev.masterId) {
+      const master = await api(evPath(ev.calId, ev.masterId));
+      if (scope === 'following' && !isFirstOf(ev, master)) {
+        // この日より前はそのまま残し、この日から新しい繰り返しを作る
+        const until = window.KoeParse.untilBefore(ev.start, ev.allDay);
+        let remaining = 0;
+        if ((master.recurrence || []).some((l) => /COUNT=/.test(l))) {
+          const q = new URLSearchParams({ timeMax: ev.start.toISOString(), maxResults: '2500', showDeleted: 'true' });
+          const past = await api(`${evPath(ev.calId, ev.masterId)}/instances?${q}`);
+          const total = Number((master.recurrence.find((l) => /COUNT=/.test(l)).match(/COUNT=(\d+)/) || [])[1]);
+          remaining = total - (past.items || []).length;
+        }
+        const rule = window.KoeParse.splitRule(master.recurrence || [], until, remaining);
+        const created = await api(`/calendars/${encodeURIComponent(v.calId)}/events`, 'POST', {
+          ...body, recurrence: rule.next, reminders: body.reminders || master.reminders,
+          description: master.description, colorId: master.colorId, transparency: master.transparency, visibility: master.visibility,
+        });
+        try {
+          await api(evPath(ev.calId, ev.masterId), 'PATCH', { recurrence: rule.old });
+        } catch (err) { // 片方だけ成功すると二重になるので、作った方を消す
+          await api(evPath(v.calId, created.id), 'DELETE').catch(() => {});
+          throw err;
+        }
+        return;
+      }
+      // すべての日：開始日はそのまま、時間と内容を変える
+      const masterDate = master.start.date ? parseYMD(master.start.date) : startOfDay(new Date(master.start.dateTime));
+      const b = eventBody({ ...v, date: masterDate }).body;
+      if (keepReminders) delete b.reminders;
+      await api(evPath(ev.calId, ev.masterId), 'PATCH', b);
+      if (v.calId !== ev.calId) await api(`${evPath(ev.calId, ev.masterId)}/move?destination=${encodeURIComponent(v.calId)}`, 'POST');
+      return;
     }
+    await api(evPath(ev.calId, ev.id), 'PATCH', body);
+    if (v.calId !== ev.calId) await api(`${evPath(ev.calId, ev.id)}/move?destination=${encodeURIComponent(v.calId)}`, 'POST');
   }
 
-  async function undeleteEvent(ev) {
-    if (state.demo) { demoStore = demoEvents().concat(ev); return; }
-    await api(`/calendars/${encodeURIComponent(ev.calId)}/events/${encodeURIComponent(ev.id)}`, 'PATCH', { status: 'confirmed' });
+  // この予定が繰り返しの最初の回か
+  function isFirstOf(ev, master) {
+    const m = master.start.date ? parseYMD(master.start.date) : new Date(master.start.dateTime);
+    return m.getTime() === ev.start.getTime();
   }
-  async function deleteEvent(ev) {
-    if (state.demo) { demoStore = demoEvents().filter((e) => e.id !== ev.id); return; }
-    await api(`/calendars/${encodeURIComponent(ev.calId)}/events/${encodeURIComponent(ev.id)}`, 'DELETE');
+
+  // 削除して、元に戻す処理を返す
+  async function deleteEvent(ev, scope = 'this') {
+    const path = (id) => `/calendars/${encodeURIComponent(ev.calId)}/events/${encodeURIComponent(id)}`;
+    if (state.demo) {
+      demoStore = demoEvents().filter((e) => e.id !== ev.id);
+      return async () => { demoStore = demoEvents().concat(ev); };
+    }
+    if (scope !== 'this' && ev.masterId) {
+      const master = await api(path(ev.masterId));
+      if (scope === 'following' && !isFirstOf(ev, master)) {
+        const orig = master.recurrence || [];
+        const rule = window.KoeParse.splitRule(orig, window.KoeParse.untilBefore(ev.start, ev.allDay));
+        await api(path(ev.masterId), 'PATCH', { recurrence: rule.old });
+        return () => api(path(ev.masterId), 'PATCH', { recurrence: orig });
+      }
+      await api(path(ev.masterId), 'DELETE');
+      return () => api(path(ev.masterId), 'PATCH', { status: 'confirmed' });
+    }
+    await api(path(ev.id), 'DELETE');
+    return () => api(path(ev.id), 'PATCH', { status: 'confirmed' });
   }
 
   // ---------- 声で登録・変更 ----------
@@ -1632,7 +1803,7 @@
     $('#btn-today').onclick = goToday;
     $('#title').onclick = goToday;
     $('#btn-menu').onclick = openMenu;
-    $('#btn-search').onclick = openSearch;
+    $('#btn-search').onclick = () => openSearch();
     $('#sheet-bg').onclick = () => { closeVoice(); closeSheet(); };
     $('#btn-login').onclick = () => tokenClient && tokenClient.requestAccessToken({ prompt: '' });
     $('#btn-demo').onclick = startDemo;
