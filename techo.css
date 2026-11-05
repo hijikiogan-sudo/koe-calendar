@@ -1,0 +1,133 @@
+/* =========================================================
+   テーマ「手帳」：革の表紙＋クリーム色の紙＋リング綴じ＋罫線
+   data-theme="techo-camel" / techo-navy / techo-bordeaux / techo-green
+   ========================================================= */
+
+/* ---- 表紙の色 ---- */
+html[data-theme=techo-camel]   { --cover:#8a5a33; --cover-deep:#6b4325; }
+html[data-theme=techo-navy]    { --cover:#26344f; --cover-deep:#1a2438; }
+html[data-theme=techo-bordeaux]{ --cover:#6d2230; --cover-deep:#511622; }
+html[data-theme=techo-green]   { --cover:#2f4a3c; --cover-deep:#21362b; }
+html[data-theme^=techo][data-scheme=dark]{ --cover:var(--cover-deep); }
+
+/* ---- 紙とインク ---- */
+html[data-theme^=techo]{
+  --font:"Klee One","Hiragino Maru Gothic ProN","Hiragino Sans",sans-serif;
+  --font-head:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif;
+  --font-num:"Shippori Mincho","Hiragino Mincho ProN",serif;
+  --r:8px; --r-ev:4px; --tint:30%;
+  --foil:#e9cf8f;
+  --noise:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+html[data-theme^=techo][data-scheme=light]{
+  --scheme:light; --bg:#fbf6ea; --surface:#fffcf4; --fg:#2e2923; --muted:#8a7e6b; --line:#e3d8c2; --line2:#eee6d4;
+  --rule:#e1d5bd; --rule2:#efe7d6; --margin-red:#e6a598; --marker:rgba(255,206,72,.55);
+  --accent:var(--cover); --on-accent:var(--foil); --accent-ring:rgba(0,0,0,.08); --link:var(--cover);
+  --head-bg:var(--cover); --head-fg:var(--foil); --head-muted:rgba(233,207,143,.7); --head-chip:rgba(255,255,255,.13);
+  --today:#c2412d; --on-today:#fff; --today-col:rgba(255,206,72,.10); --sun:#c2412d; --sat:#2d5f9a;
+  --soft:#efe6d3; --input:#fffcf4; --field:#fffcf4; --focus:#d9c7a3; --out:#f4eedf; --out-fg:#c9bda6;
+  --heard:#f3ecdc; --grab:#d9ccb3; --tasks-bg:#fbf6ea; --scrim:rgba(40,28,15,.4);
+  --ev:#2d5f9a; --on-ev:#fff; --ev-soft:#e2e9f1; --task:#9a4a2a; --on-task:#fff; --task-soft:#f2dfd2;
+  --danger:#c2412d; --warn-bg:#f6e8c3; --warn-fg:#7a5a16; --changed:#fbefc9;
+  --toast-bg:#2e2923; --toast-fg:#fbf6ea; --mic-idle:#b8ab92; --ev-border:transparent;
+}
+html[data-theme^=techo][data-scheme=dark]{
+  --scheme:dark; --bg:#24211c; --surface:#2b2721; --fg:#ece3d2; --muted:#a39780; --line:#3b352c; --line2:#312c25;
+  --rule:#3b352c; --rule2:#2f2a23; --margin-red:#7a453b; --marker:rgba(255,206,72,.22);
+  --accent:#d8bb7c; --on-accent:#24211c; --accent-ring:rgba(216,187,124,.18); --link:#e2c992;
+  --head-bg:var(--cover); --head-fg:var(--foil); --head-muted:rgba(233,207,143,.6); --head-chip:rgba(255,255,255,.08);
+  --today:#e0775f; --on-today:#24211c; --today-col:rgba(255,206,72,.05); --sun:#e0866f; --sat:#8fb3d9;
+  --soft:#332e26; --input:#2b2721; --field:#2b2721; --focus:#6b5a3f; --out:#201d18; --out-fg:#5a5044;
+  --heard:#312c25; --grab:#4a4236; --tasks-bg:#24211c; --scrim:rgba(0,0,0,.6);
+  --ev:#8fb3d9; --on-ev:#1a1712; --ev-soft:#2c3440; --task:#e0956f; --on-task:#1a1712; --task-soft:#3c2b22;
+  --danger:#e0866f; --warn-bg:#3a3018; --warn-fg:#e6c77a; --changed:#332c18;
+  --toast-bg:#ece3d2; --toast-fg:#24211c; --mic-idle:#5a5044; --ev-border:transparent;
+}
+
+/* ---- 表紙（上の帯と下の入力欄のまわり） ---- */
+html[data-theme^=techo] body{background:var(--cover-deep)}
+html[data-theme^=techo] #app{background:var(--cover) var(--noise);background-blend-mode:soft-light}
+html[data-theme^=techo] .top{background:transparent;position:relative;padding-bottom:16px}
+html[data-theme^=techo] .top::before{ /* 表紙のステッチ */
+  content:"";position:absolute;left:8px;right:8px;top:calc(env(safe-area-inset-top) * 0 + 3px);border-top:1.5px dashed rgba(233,207,143,.35);pointer-events:none}
+html[data-theme^=techo] .title{font-family:var(--font-head);color:var(--foil);text-shadow:0 1px 0 rgba(0,0,0,.35)}
+html[data-theme^=techo] .seg{background:rgba(0,0,0,.18)}
+html[data-theme^=techo] .seg button{color:rgba(233,207,143,.75);font-family:var(--font-head)}
+html[data-theme^=techo] .seg button.on{background:var(--bg);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.25)}
+html[data-theme^=techo] .demo-banner{background:rgba(0,0,0,.2);color:var(--foil)}
+
+/* ---- 紙のページ ---- */
+html[data-theme^=techo] .view,
+html[data-theme^=techo] .tasks{margin:0 8px;background:var(--bg);position:relative}
+html[data-theme^=techo] .view{border-radius:6px 6px 0 0;box-shadow:0 -1px 0 rgba(0,0,0,.08)}
+html[data-theme^=techo] .tasks{border-radius:0 0 6px 6px;box-shadow:0 6px 14px rgba(0,0,0,.25);border-top:1.5px solid var(--rule)}
+html[data-theme^=techo] .view::after,
+html[data-theme^=techo] .tasks::after{ /* 紙の質感 */
+  content:"";position:absolute;inset:0;background:var(--noise);opacity:.05;mix-blend-mode:multiply;pointer-events:none;z-index:4;border-radius:inherit}
+html[data-theme^=techo][data-scheme=dark] .view::after,
+html[data-theme^=techo][data-scheme=dark] .tasks::after{mix-blend-mode:screen;opacity:.04}
+
+/* リング綴じ（表紙と紙の境目） */
+html[data-theme^=techo] .top::after{
+  content:"";position:absolute;left:22px;right:22px;bottom:-9px;height:22px;z-index:6;pointer-events:none;
+  background:
+    radial-gradient(circle at 50% 72%, rgba(0,0,0,.45) 0 3.2px, transparent 3.8px) 0 0/26px 22px repeat-x,
+    linear-gradient(90deg, transparent 0 10px, #d9d4ca 10px 11.5px, #a9a398 11.5px 14.5px, #ece8df 14.5px 16px, transparent 16px) 0 0/26px 15px repeat-x;
+  filter:drop-shadow(0 1px 1px rgba(0,0,0,.35))}
+
+/* ---- 時間軸：罫線・赤い余白線・明朝の数字 ---- */
+html[data-theme^=techo] .tg-head{padding-top:12px;border-bottom:1.5px solid var(--rule)}
+html[data-theme^=techo] .dh{font-family:var(--font);font-weight:600}
+html[data-theme^=techo] .dh b{font-family:var(--font-num);font-size:19px;font-weight:700;border-radius:4px}
+html[data-theme^=techo] .dh.today{color:var(--fg)}
+html[data-theme^=techo] .dh.today b{background:linear-gradient(transparent 52%, var(--marker) 52%, var(--marker) 92%, transparent 92%);color:var(--fg);transform:rotate(-2deg)}
+html[data-theme^=techo] .tg-allday{border-bottom:1.5px solid var(--rule)}
+html[data-theme^=techo] .tg-allday .lbl,
+html[data-theme^=techo] .tg-head > div:first-child{border-right:1.5px solid var(--margin-red)}
+html[data-theme^=techo] .tg-body .hours{border-right:1.5px solid var(--margin-red)}
+html[data-theme^=techo] .hl{font-family:var(--font-num);font-weight:600;font-size:11px}
+html[data-theme^=techo] .dcol{border-left:1px solid var(--rule2);
+  background-image:
+    linear-gradient(var(--rule) 1px, transparent 1px),
+    linear-gradient(transparent calc(50% - .5px), var(--rule2) calc(50% - .5px), var(--rule2) calc(50% + .5px), transparent calc(50% + .5px));
+  background-size:100% var(--hour),100% var(--hour)}
+html[data-theme^=techo] .tg-row > .dcol:nth-child(2){border-left:0}
+html[data-theme^=techo] .dcol.today{background-color:var(--today-col)}
+
+/* 予定：手書き風の文字＋色鉛筆で塗ったような地 */
+html[data-theme^=techo] .ev,
+html[data-theme^=techo] .chip,
+html[data-theme^=techo] .mc .m-ev{font-family:var(--font);font-weight:600}
+html[data-theme^=techo] .ev{border-radius:3px 6px 6px 3px;box-shadow:0 1px 0 rgba(0,0,0,.06)}
+
+/* ---- 月：明朝の日付、左上寄せ ---- */
+html[data-theme^=techo] .mg-head{font-family:var(--font);padding-top:12px;border-bottom:1.5px solid var(--rule)}
+html[data-theme^=techo] .mc{border-right:1px solid var(--rule2);border-bottom:1px solid var(--rule)}
+html[data-theme^=techo] .mc .num{align-self:flex-start;font-family:var(--font-num);font-size:14px;margin:0 0 1px 2px;width:auto;height:auto;line-height:1.3;border-radius:0;padding:0 2px;text-align:left}
+html[data-theme^=techo] .mc.today .num{background:linear-gradient(transparent 50%, var(--marker) 50%, var(--marker) 92%, transparent 92%);color:var(--fg)}
+html[data-theme^=techo] .mc.out{background:transparent}
+
+/* ---- タスク：ノートの罫線に書いたように ---- */
+html[data-theme^=techo] .tk-head b{font-family:var(--font-head)}
+html[data-theme^=techo] .tk-list li{background:transparent;box-shadow:none;border-radius:0;margin:0;border-bottom:1px dashed var(--rule)}
+html[data-theme^=techo] .tk-box{border-radius:3px;border-width:1.8px;border-color:var(--fg)}
+html[data-theme^=techo] .tk-list li.done .tk-box{background:var(--fg)}
+html[data-theme^=techo] .tk-title{font-weight:600}
+
+/* ---- 下：表紙の上に紙のタグとマイク ---- */
+html[data-theme^=techo] .bottom::before{display:none}
+html[data-theme^=techo] .inbar input{background:var(--bg);border:0;box-shadow:inset 0 1px 2px rgba(0,0,0,.08),0 2px 6px rgba(0,0,0,.25);border-radius:12px}
+html[data-theme^=techo] .mic{background:linear-gradient(145deg,#f3dda2,#c9a85c);color:var(--cover-deep);box-shadow:0 3px 8px rgba(0,0,0,.35),0 0 0 4px rgba(233,207,143,.18)}
+html[data-theme^=techo][data-scheme=dark] .mic{color:#24211c}
+
+/* ---- シート ---- */
+html[data-theme^=techo] .sheet,
+html[data-theme^=techo] .voice{background:var(--surface)}
+html[data-theme^=techo] .sheet h2{font-family:var(--font-head)}
+html[data-theme^=techo] .sheet .ok{background:var(--cover);color:var(--foil)}
+html[data-theme^=techo][data-scheme=dark] .sheet .ok{background:var(--accent);color:var(--on-accent)}
+html[data-theme^=techo] .login{background:var(--cover) var(--noise);background-blend-mode:soft-light}
+html[data-theme^=techo] .login-card h1{color:var(--foil)}
+html[data-theme^=techo] .login-card p{color:rgba(233,207,143,.8)}
+html[data-theme^=techo] .login .primary{background:var(--bg);color:var(--fg)}
+html[data-theme^=techo] .login .link{color:var(--foil)}

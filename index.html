@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ja" data-theme="techo-camel" data-scheme="light">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Cache-Control" content="no-cache">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Koe">
+<meta name="theme-color" content="#ffffff">
+<title>Koe</title>
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Klee+One:wght@400;600&family=Shippori+Mincho:wght@600;700&family=Zen+Maru+Gothic:wght@500;700&display=swap">
+<link rel="stylesheet" href="style.css?v=202611051246">
+<link rel="stylesheet" href="themes.css?v=202611051246">
+<link rel="stylesheet" href="techo.css?v=202611051246">
+<script>
+  // 画面が出る前にテーマを当てる（ちらつき防止）
+  (function () {
+    var d = document.documentElement, t = 'techo-camel', m = 'auto';
+    try { t = JSON.parse(localStorage.getItem('theme')) || t; m = JSON.parse(localStorage.getItem('mode')) || m; } catch (e) {}
+    d.dataset.theme = t;
+    d.dataset.scheme = m === 'dark' || (m === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  })();
+</script>
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <div class="top-row">
+      <button class="icon-btn" id="btn-menu" aria-label="メニュー">
+        <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <button class="title" id="title" aria-label="今日に戻る"></button>
+      <div class="nav">
+        <button class="icon-btn" id="btn-prev" aria-label="前へ"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <button class="today-btn" id="btn-today">今日</button>
+        <button class="icon-btn" id="btn-next" aria-label="次へ"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+      </div>
+    </div>
+    <div class="seg" role="tablist">
+      <button data-view="day" role="tab">日</button>
+      <button data-view="week" role="tab">週</button>
+      <button data-view="month" role="tab">月</button>
+    </div>
+    <div class="demo-banner" id="demo-banner" hidden>お試し表示中（ダミーの予定です）</div>
+  </header>
+
+  <main id="view" class="view"></main>
+  <section class="tasks" id="tasks" hidden></section>
+
+  <footer class="bottom">
+    <form class="inbar" id="inbar">
+      <input id="intext" type="text" placeholder="打って登録…（例：明日14時 打ち合わせ）" autocomplete="off" enterkeyhint="send">
+    </form>
+    <button class="mic" id="btn-mic" aria-label="声で登録">
+      <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+    </button>
+  </footer>
+</div>
+
+<!-- ログイン画面 -->
+<div class="login" id="login" hidden>
+  <div class="login-card">
+    <img src="icons/icon-192.png" alt="">
+    <h1>Koe</h1>
+    <p>話すだけで、予定とタスクが入る手帳。<br>Googleカレンダーと ToDo リストを使うため、Googleアカウントでログインします。</p>
+    <button class="primary" id="btn-login" disabled>Googleでログイン</button>
+    <button class="link" id="btn-demo">ログインせずにお試し表示</button>
+  </div>
+</div>
+
+<!-- 下から出るシート（予定の詳細・メニュー共通） -->
+<div class="sheet-bg" id="sheet-bg" hidden></div>
+<div class="sheet" id="sheet" hidden></div>
+
+<!-- 声入力パネル（パターンB：マイク主役） -->
+<div class="voice" id="voice" hidden>
+  <div class="v-heard" id="v-heard" aria-live="polite">話してください</div>
+  <button class="bigmic" id="v-mic" aria-label="聞き取りを止める／もう一度">
+    <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+  </button>
+  <span class="v-hint" id="v-hint">聞き取り中…話し終えたら確認画面へ</span>
+  <button class="link" id="v-kb">文字で入力する</button>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="config.js?v=202611051246"></script>
+<script src="parse.js?v=202611051246"></script>
+<script src="app.js?v=202611051246"></script>
+<script src="https://accounts.google.com/gsi/client" async onload="window.onGsiLoaded && window.onGsiLoaded()"></script>
+</body>
+</html>
