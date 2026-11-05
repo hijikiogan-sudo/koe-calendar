@@ -108,6 +108,7 @@
     return cals.find((c) => /自分用/.test(c.name)) || cals.find((c) => c.primary) || cals[0] || null;
   }
 
+  const pad2 = (x) => String(x).padStart(2, '0');
   // 週の最初の日（ws：0=日曜始まり、1=月曜始まり）
   const weekBase = (today, ws) => addDays(today, -((today.getDay() - (ws || 0) + 7) % 7));
 
@@ -212,41 +213,112 @@
     return null;
   }
 
-  // ---- 繰り返し（「毎週月曜」「毎月1日」「毎日」など）----
-  function parseRecur(st, now) {
-    const today = startOfDay(now);
+  // ---- 繰り返し（「毎週月水金」「毎月第2火曜」「2週間ごと」「10回まで」「12月末まで」など）----
+  // 結果：{ freq, interval, days:[曜日番号], monthMode:'day'|'nth'|'last'|'end', count, until, date }
+  function nthDow(y, m, nth, dow) { // その月の第n X曜（nth=-1 は最終）
+    if (nth === -1) { const last = new Date(y, m + 1, 0); return addDays(last, -((last.getDay() - dow + 7) % 7)); }
+    const first = new Date(y, m, 1);
+    const d = addDays(first, ((dow - first.getDay() + 7) % 7) + (nth - 1) * 7);
+    return d.getMonth() === m ? d : null;
+  }
+  function parseRecurBody(st, today) {
     const nextDow = (i) => addDays(today, (i - today.getDay() + 7) % 7);
+    const dayIdx = (t) => [...new Set([...t].map((c) => WD.indexOf(c)).filter((i) => i >= 0))].sort((a, b) => a - b);
+    const nearestOf = (ds) => ds.map(nextDow).sort((a, b) => a - b)[0];
+    const END = '(?=$|[\\s、,，。]|に|の|\\d)';
     let m;
-    if (take(st, /毎週平日|平日毎日|毎平日/)) {
+    if (take(st, /毎週平日|平日毎日|毎平日|平日は毎日/)) {
       let d = today; while (d.getDay() === 0 || d.getDay() === 6) d = addDays(d, 1);
-      return { freq: 'WEEKDAYS', date: d };
+      return { freq: 'WEEKDAYS', interval: 1, date: d };
     }
-    if ((m = take(st, new RegExp(`(隔週|毎週|毎)\\s*([${WD}])曜日?`)))) return { freq: m[1] === '隔週' ? 'BIWEEKLY' : 'WEEKLY', date: nextDow(WD.indexOf(m[2])) };
-    if ((m = take(st, /毎月\s*(\d{1,2})日/))) return { freq: 'MONTHLY', date: nearestDay(Number(m[1]), today) };
-    if (take(st, /毎月末/)) return { freq: 'MONTHLY', monthEnd: true, date: new Date(today.getFullYear(), today.getMonth() + 1, 0) };
+    // 毎月第2火曜・毎月最終金曜
+    st.s = st.s.replace(/第\s*([一二三四五])/g, (_, k) => `第${'一二三四五'.indexOf(k) + 1}`);
+    if ((m = take(st, new RegExp(`毎月\\s*(?:第\\s*(\\d)|(最終|最後の?))\\s*([${WD}])曜日?`)))) {
+      const nth = m[1] ? Number(m[1]) : -1, dow = WD.indexOf(m[3]);
+      for (let i = 0; i < 14; i++) {
+        const base = new Date(today.getFullYear(), today.getMonth() + i, 1);
+        const d = nthDow(base.getFullYear(), base.getMonth(), nth, dow);
+        if (d && d >= today) return { freq: 'MONTHLY', interval: 1, monthMode: nth === -1 ? 'last' : 'nth', date: d };
+      }
+    }
+    // 毎週月水金・毎週月曜と木曜
+    if ((m = take(st, new RegExp(`(?:毎週|毎)\\s*([${WD}](?:曜日?)?(?:[・、,，と]?\\s?[${WD}](?:曜日?)?)+)${END}`)))) {
+      const days = dayIdx(m[1].replace(/曜日?/g, '曜').replace(/曜/g, ''));
+      return { freq: 'WEEKLY', interval: 1, days, date: nearestOf(days) };
+    }
+    // 2週間ごと・3日おき・2か月ごと
+    if ((m = take(st, /(\d+)\s*(日|週間?|[かヶカケ]?月|年)\s*(ごと|おき)(?:に|の)?/))) {
+      const n = Number(m[1]), unit = m[2][0], off = m[3] === 'おき' && unit === '日' ? 1 : 0;
+      const freq = unit === '日' ? 'DAILY' : unit === '週' ? 'WEEKLY' : unit === '年' ? 'YEARLY' : 'MONTHLY';
+      const w = freq === 'WEEKLY' ? take(st, new RegExp(`([${WD}])曜日?`)) : null;
+      const rec = { freq, interval: n + off, date: null };
+      if (w) { rec.days = [WD.indexOf(w[1])]; rec.date = nextDow(rec.days[0]); }
+      return rec;
+    }
+    if ((m = take(st, new RegExp(`隔週\\s*(?:の)?\\s*([${WD}])曜日?`)))) return { freq: 'WEEKLY', interval: 2, days: [WD.indexOf(m[1])], date: nextDow(WD.indexOf(m[1])) };
+    if ((m = take(st, new RegExp(`毎週?\\s*([${WD}])曜日?`)))) return { freq: 'WEEKLY', interval: 1, days: [WD.indexOf(m[1])], date: nextDow(WD.indexOf(m[1])) };
+    if ((m = take(st, /毎月\s*(\d{1,2})日/))) return { freq: 'MONTHLY', interval: 1, monthMode: 'day', date: nearestDay(Number(m[1]), today) };
+    if (take(st, /毎月末/)) return { freq: 'MONTHLY', interval: 1, monthMode: 'end', date: new Date(today.getFullYear(), today.getMonth() + 1, 0) };
     if ((m = take(st, /毎年\s*(\d{1,2})月\s*(\d{1,2})日/))) {
       let d = new Date(today.getFullYear(), Number(m[1]) - 1, Number(m[2]));
       if (d < today) d = new Date(d.getFullYear() + 1, d.getMonth(), d.getDate());
-      return { freq: 'YEARLY', date: d };
+      return { freq: 'YEARLY', interval: 1, date: d };
     }
-    if (take(st, /毎日/)) return { freq: 'DAILY', date: null };
-    if (take(st, /隔週/)) return { freq: 'BIWEEKLY', date: null };
-    if (take(st, /毎週/)) return { freq: 'WEEKLY', date: null };
-    if (take(st, /毎月/)) return { freq: 'MONTHLY', date: null };
-    if (take(st, /毎年/)) return { freq: 'YEARLY', date: null };
+    if (take(st, /毎日/)) return { freq: 'DAILY', interval: 1, date: null };
+    if (take(st, /隔日/)) return { freq: 'DAILY', interval: 2, date: null };
+    if (take(st, /隔週/)) return { freq: 'WEEKLY', interval: 2, date: null };
+    if (take(st, /隔月/)) return { freq: 'MONTHLY', interval: 2, date: null };
+    if (take(st, /毎週/)) return { freq: 'WEEKLY', interval: 1, date: null };
+    if (take(st, /毎月/)) return { freq: 'MONTHLY', interval: 1, date: null };
+    if (take(st, /毎年/)) return { freq: 'YEARLY', interval: 1, date: null };
     return null;
   }
+  function parseRecur(st, now) {
+    const today = startOfDay(now);
+    const rec = parseRecurBody(st, today);
+    if (!rec) return null;
+    // 終わりの指定
+    let m;
+    if ((m = take(st, /(?<![第\d])(\d+)\s*回(?!目)(?:まで|だけ|で終わり)?/))) rec.count = Number(m[1]);
+    else if ((m = take(st, /(\d{1,2})月\s*(\d{1,2})日\s*まで/))) {
+      let d = new Date(today.getFullYear(), Number(m[1]) - 1, Number(m[2]));
+      if (d < today) d = new Date(d.getFullYear() + 1, d.getMonth(), d.getDate());
+      rec.until = d;
+    } else if ((m = take(st, /(\d{1,2})月末\s*まで/))) {
+      let d = new Date(today.getFullYear(), Number(m[1]), 0);
+      if (d < today) d = new Date(today.getFullYear() + 1, Number(m[1]), 0);
+      rec.until = d;
+    } else if (take(st, /来月末\s*まで/)) rec.until = new Date(today.getFullYear(), today.getMonth() + 2, 0);
+    else if (take(st, /今月末\s*まで|月末\s*まで/)) rec.until = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    else if (take(st, /年末\s*まで/)) rec.until = new Date(today.getFullYear(), 11, 31);
+    return rec;
+  }
   // Google カレンダーに渡す繰り返しの指定
-  function recurRule(freq, date, monthEnd) {
-    const day = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][date.getDay()];
-    return {
-      DAILY: 'RRULE:FREQ=DAILY',
-      WEEKDAYS: 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
-      WEEKLY: `RRULE:FREQ=WEEKLY;BYDAY=${day}`,
-      BIWEEKLY: `RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=${day}`,
-      MONTHLY: `RRULE:FREQ=MONTHLY;BYMONTHDAY=${monthEnd ? -1 : date.getDate()}`,
-      YEARLY: 'RRULE:FREQ=YEARLY',
-    }[freq] || null;
+  function recurRule(rec, date, allDay) {
+    const CODE = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+    const r = typeof rec === 'string' ? { freq: rec } : rec;
+    const parts = [];
+    const interval = Number(r.interval) > 1 ? `;INTERVAL=${Number(r.interval)}` : '';
+    if (r.freq === 'DAILY') parts.push(`FREQ=DAILY${interval}`);
+    else if (r.freq === 'WEEKDAYS') parts.push('FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR');
+    else if (r.freq === 'WEEKLY') {
+      const days = r.days && r.days.length ? r.days : [date.getDay()];
+      parts.push(`FREQ=WEEKLY${interval};BYDAY=${days.map((i) => CODE[i]).join(',')}`);
+    } else if (r.freq === 'MONTHLY') {
+      const mode = r.monthMode || 'day';
+      if (mode === 'end') parts.push(`FREQ=MONTHLY${interval};BYMONTHDAY=-1`);
+      else if (mode === 'last') parts.push(`FREQ=MONTHLY${interval};BYDAY=-1${CODE[date.getDay()]}`);
+      else if (mode === 'nth') parts.push(`FREQ=MONTHLY${interval};BYDAY=${Math.ceil(date.getDate() / 7)}${CODE[date.getDay()]}`);
+      else parts.push(`FREQ=MONTHLY${interval};BYMONTHDAY=${date.getDate()}`);
+    } else if (r.freq === 'YEARLY') parts.push(`FREQ=YEARLY${interval}`);
+    else return null;
+    if (r.count) parts.push(`COUNT=${Number(r.count)}`);
+    else if (r.until) {
+      const u = new Date(r.until);
+      if (allDay) parts.push(`UNTIL=${u.getFullYear()}${pad2(u.getMonth() + 1)}${pad2(u.getDate())}`);
+      else { u.setHours(23, 59, 59, 0); parts.push(`UNTIL=${u.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')}`); }
+    }
+    return `RRULE:${parts.join(';')}`;
   }
 
   // ---- 時間 ----
@@ -405,7 +477,7 @@
       remind, // null | {minutes: number|'prevday', label}
       spanDays,
       endDays: time && time.endDays ? time.endDays : 0,
-      recur: recur ? { freq: recur.freq, monthEnd: !!recur.monthEnd } : null,
+      recur: recur ? { freq: recur.freq, interval: recur.interval || 1, days: recur.days, monthMode: recur.monthMode, count: recur.count, until: recur.until } : null,
     };
   }
 
@@ -533,7 +605,6 @@
   }
 
   // ---- 繰り返しの分割（「この日以降」を変えるとき）----
-  const pad2 = (x) => String(x).padStart(2, '0');
   function untilBefore(start, allDay) {
     if (allDay) { const d = addDays(start, -1); return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`; }
     return new Date(start.getTime() - 1000).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');

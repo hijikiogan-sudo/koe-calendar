@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '202611051444'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
+  const APP_VERSION = '202611051451'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
   const SCOPES = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/tasks';
   const API = 'https://www.googleapis.com/calendar/v3';
   const WD = ['日', '月', '火', '水', '木', '金', '土'];
@@ -1113,10 +1113,25 @@
   ];
   const minLabel = (m) => (m % 1440 === 0 ? `${m / 1440}日前` : m % 60 === 0 ? `${m / 60}時間前` : `${m}分前`);
   const RECURS = [
-    { v: '', label: '繰り返さない' }, { v: 'DAILY', label: '毎日' }, { v: 'WEEKDAYS', label: '平日のみ' }, { v: 'WEEKLY', label: '毎週' },
-    { v: 'BIWEEKLY', label: '隔週' }, { v: 'MONTHLY', label: '毎月' }, { v: 'YEARLY', label: '毎年' },
+    { v: '', label: '繰り返さない' }, { v: 'DAILY', label: '毎日／○日ごと' }, { v: 'WEEKDAYS', label: '平日のみ' }, { v: 'WEEKLY', label: '毎週／○週ごと' },
+    { v: 'MONTHLY', label: '毎月／○か月ごと' }, { v: 'YEARLY', label: '毎年' },
   ];
   const defaultList = (id) => id || (state.taskLists.some((l) => l.id === cfg('defList', '')) ? cfg('defList', '') : state.taskLists[0] && state.taskLists[0].id);
+  // 繰り返しの内容を言葉にする
+  function recurText(r, d) {
+    const n = Number(r.interval) || 1;
+    let t = '';
+    if (r.freq === 'DAILY') t = n > 1 ? `${n}日ごと` : '毎日';
+    else if (r.freq === 'WEEKDAYS') t = '平日のみ';
+    else if (r.freq === 'WEEKLY') t = `${n > 1 ? `${n}週ごと` : '毎週'} ${(r.days || []).map((x) => WD[x]).join('・')}曜`;
+    else if (r.freq === 'MONTHLY') {
+      const head = n > 1 ? `${n}か月ごと` : '毎月';
+      t = isNaN(d) ? head : `${head} ${{ day: `${d.getDate()}日`, nth: `第${Math.ceil(d.getDate() / 7)}${WD[d.getDay()]}曜`, last: `最終${WD[d.getDay()]}曜`, end: '月末' }[r.monthMode || 'day']}`;
+    } else if (r.freq === 'YEARLY') t = isNaN(d) ? '毎年' : `毎年 ${d.getMonth() + 1}月${d.getDate()}日`;
+    if (r.count) t += `（${r.count}回）`;
+    if (r.until) t += `（${r.until.getMonth() + 1}月${r.until.getDate()}日まで）`;
+    return t;
+  }
   const writableCals = () => state.calendars.filter((c) => c.writable);
 
   // v: {kind,calId,title,date,noDue,allDay,start,end,location,remind,spanDays}
@@ -1161,7 +1176,14 @@
       <div class="conflict ev-only" id="c-conflict" hidden></div>
       <div class="f ev-only" id="c-endrow" ${hasEnd ? '' : 'hidden'}><span class="fl">終わりの日</span><input id="c-enddate" type="date" value="${ymd(addDays(v.date || startOfDay(new Date()), v.allDay ? (v.spanDays || 1) - 1 : v.endDays || 0))}"></div>
       ${opt.lockDate ? '<p class="note ev-only" style="margin:4px 0 0">この範囲では日付を変えられません。時間・内容・場所・通知は変えられます。</p>' : `<button type="button" class="link ev-only" id="c-endadd" style="margin-top:6px" ${hasEnd ? 'hidden' : ''}>＋ 別の日に終わる</button>`}
-      ${opt.allowRecur ? `<label class="f ev-only"><span class="fl">繰り返し</span><select id="c-recur">${RECURS.map((r) => `<option value="${r.v}" ${r.v === (v.recur || '') ? 'selected' : ''}>${r.label}</option>`).join('')}</select></label>` : ''}
+      ${opt.allowRecur ? `<label class="f ev-only"><span class="fl">繰り返し</span><select id="c-recur">${RECURS.map((r) => `<option value="${r.v}" ${r.v === ((v.recur && v.recur.freq) || '') ? 'selected' : ''}>${r.label}</option>`).join('')}</select></label>
+      <div class="ev-only" id="c-rbox" hidden>
+        <div class="f" id="c-rint-row"><span class="fl">間隔</span><div class="trow"><input id="c-rint" type="number" inputmode="numeric" min="1" max="99" value="${(v.recur && v.recur.interval) || 1}"><span id="c-rint-unit" class="runit"></span></div></div>
+        <div class="f" id="c-rdays-row"><span class="fl">曜日</span><div class="rdays">${[0, 1, 2, 3, 4, 5, 6].map((i) => (i + cfg('weekStart', 0)) % 7).map((d) => `<button type="button" data-d="${d}">${WD[d]}</button>`).join('')}</div></div>
+        <label class="f" id="c-rmon-row"><span class="fl">毎月の日</span><select id="c-rmon"></select></label>
+        <div class="f"><span class="fl">終わり</span><div class="trow"><select id="c-rend"><option value="">ずっと</option><option value="count">回数で</option><option value="until">日付まで</option></select><input id="c-rcount" type="number" inputmode="numeric" min="1" max="999" placeholder="回" hidden><input id="c-runtil" type="date" hidden></div></div>
+        <p class="note" id="c-rsum" style="margin:6px 0 0"></p>
+      </div>` : ''}
       ${!opt.fixedKind && state.taskLists.length > 1 ? `<div class="f task-only"><span class="fl">リスト</span><div class="cal-chips">${state.taskLists.map((l) => `<button type="button" class="cc lc${l.id === defaultList(v.listId) ? ' on' : ''}" data-id="${esc(l.id)}" style="--c:var(--task);--ct:var(--on-task)">${esc(l.title)}</button>`).join('')}</div></div>` : ''}
       <label class="f ev-only${ch('location')}"><span class="fl">場所</span><input id="c-loc" value="${esc(v.location || '')}" placeholder="なし"></label>
       <div class="sugg ev-only" id="s-loc" hidden></div>
@@ -1236,6 +1258,54 @@
       $('#c-title').addEventListener('input', drawQuick);
       drawQuick();
     }
+    // 繰り返しの詳しい指定
+    const rec = { days: new Set((v.recur && v.recur.days) || []), mode: (v.recur && v.recur.monthMode) || 'day' };
+    const drawRecur = () => {
+      if (!$('#c-recur')) return;
+      const freq = $('#c-recur').value, d = parseYMD($('#c-date').value);
+      $('#c-rbox').hidden = !freq;
+      if (!freq) return;
+      $('#c-rint-row').hidden = freq === 'WEEKDAYS' || freq === 'YEARLY';
+      $('#c-rint-unit').textContent = { DAILY: '日ごと', WEEKLY: '週ごと', MONTHLY: 'か月ごと' }[freq] || '';
+      $('#c-rdays-row').hidden = freq !== 'WEEKLY';
+      $('#c-rmon-row').hidden = freq !== 'MONTHLY';
+      if (freq === 'WEEKLY' && !rec.days.size && !isNaN(d)) rec.days.add(d.getDay());
+      sh.querySelectorAll('.rdays button').forEach((b) => b.classList.toggle('on', rec.days.has(Number(b.dataset.d))));
+      if (!isNaN(d)) {
+        const lastWeek = addDays(d, 7).getMonth() !== d.getMonth();
+        const opts = [['day', `毎月${d.getDate()}日`], ['nth', `第${Math.ceil(d.getDate() / 7)}${WD[d.getDay()]}曜`]];
+        if (lastWeek) opts.push(['last', `最終${WD[d.getDay()]}曜`]);
+        if (addDays(d, 1).getMonth() !== d.getMonth()) opts.push(['end', '月末']);
+        if (!opts.some((o) => o[0] === rec.mode)) rec.mode = 'day';
+        $('#c-rmon').innerHTML = opts.map(([k, l]) => `<option value="${k}" ${k === rec.mode ? 'selected' : ''}>${l}</option>`).join('');
+      }
+      const end = $('#c-rend').value;
+      $('#c-rcount').hidden = end !== 'count';
+      $('#c-runtil').hidden = end !== 'until';
+      const r = readRecur();
+      $('#c-rsum').textContent = r ? recurText(r, d) : '';
+    };
+    const readRecur = () => {
+      const freq = $('#c-recur') && $('#c-recur').value;
+      if (!freq) return null;
+      const r = { freq, interval: Math.max(Number($('#c-rint').value) || 1, 1), days: freq === 'WEEKLY' ? [...rec.days].sort((a, b) => a - b) : undefined, monthMode: freq === 'MONTHLY' ? rec.mode : undefined };
+      const end = $('#c-rend').value;
+      if (end === 'count' && Number($('#c-rcount').value) > 0) r.count = Number($('#c-rcount').value);
+      if (end === 'until' && $('#c-runtil').value) r.until = parseYMD($('#c-runtil').value);
+      return r;
+    };
+    if ($('#c-recur')) {
+      if (v.recur && v.recur.count) { $('#c-rend').value = 'count'; $('#c-rcount').value = v.recur.count; }
+      if (v.recur && v.recur.until) { $('#c-rend').value = 'until'; $('#c-runtil').value = ymd(v.recur.until); }
+      ['c-recur', 'c-rint', 'c-rend', 'c-rcount', 'c-runtil', 'c-date'].forEach((id) => { $('#' + id).addEventListener('change', drawRecur); $('#' + id).addEventListener('input', drawRecur); });
+      $('#c-rmon').addEventListener('change', () => { rec.mode = $('#c-rmon').value; drawRecur(); });
+      sh.querySelectorAll('.rdays button').forEach((b) => b.onclick = () => {
+        const d = Number(b.dataset.d);
+        if (rec.days.has(d)) { if (rec.days.size > 1) rec.days.delete(d); } else rec.days.add(d);
+        drawRecur();
+      });
+      drawRecur();
+    }
     let prevDate = $('#c-date').value;
     $('#c-date').addEventListener('change', () => { // 開始日を動かしたら終わりの日も同じだけ動かす
       const a = parseYMD($('#c-date').value), o = parseYMD(prevDate), e = parseYMD($('#c-enddate').value);
@@ -1265,8 +1335,7 @@
         spanDays: v.spanDays || 1,
         endDays: v.endDays || 0,
         listId,
-        recur: $('#c-recur') ? $('#c-recur').value : '',
-        monthEnd: !!v.monthEnd,
+        recur: null,
       };
       if (!out.noDue && isNaN(out.date)) { toast('日付を入れてください'); return; }
       if (kind === 'event' && !isNaN(out.date)) {
@@ -1275,6 +1344,14 @@
         if (diff < 0) { toast('終わりの日が開始より前になっています'); return; }
         out.spanDays = out.allDay ? diff + 1 : 1;
         out.endDays = out.allDay ? 0 : diff;
+        out.recur = readRecur();
+        if (out.recur) {
+          if ($('#c-rend').value === 'until' && (!out.recur.until || out.recur.until < out.date)) { toast('繰り返しの終わりの日を確かめてください'); return; }
+          if ($('#c-rend').value === 'count' && !out.recur.count) { toast('繰り返す回数を入れてください'); return; }
+          // 選んだ曜日に当たる最初の日から始める（Googleで余分な1回が増えないように）
+          if (out.recur.freq === 'WEEKLY') { while (!out.recur.days.includes(out.date.getDay())) out.date = addDays(out.date, 1); }
+          if (out.recur.freq === 'WEEKDAYS') { while (out.date.getDay() === 0 || out.date.getDay() === 6) out.date = addDays(out.date, 1); }
+        }
       }
       const ok = $('#c-ok');
       ok.disabled = true; ok.textContent = opt.busyLabel || '保存中…';
@@ -1458,7 +1535,7 @@
       kind: p.kind, calId: p.calId, title: p.title, date: p.date, noDue: p.kind === 'task' && !p.dateSaid && !slot,
       allDay: p.allDay, start: p.start, end: p.end,
       location: p.location, remind: p.remind ? String(p.remind.minutes) : cfg('defRemind', ''), remindLabel: p.remind && p.remind.label,
-      spanDays: p.spanDays, endDays: p.endDays, recur: p.recur ? p.recur.freq : '', monthEnd: !!(p.recur && p.recur.monthEnd),
+      spanDays: p.spanDays, endDays: p.endDays, recur: p.recur,
       listId: (p.calSaid && state.taskLists.find((l) => { const c = cals.find((x) => x.id === p.calId); return c && (c.name.includes(l.title) || l.title.includes(c.name)); }) || {}).id,
     }, {
       heading: 'この内容で登録しますか？', heard: text, busyLabel: '登録中…', allowRecur: true, quick: true,
@@ -1725,7 +1802,7 @@
       body.reminders = { useDefault: false, overrides: min != null ? [{ method: 'popup', minutes: min }] : [] };
     }
     if (v.description) body.description = v.description;
-    if (v.recur) { const rule = window.KoeParse.recurRule(v.recur, v.date, v.monthEnd); if (rule) body.recurrence = [rule]; }
+    if (v.recur) { const rule = window.KoeParse.recurRule(v.recur, v.date, v.allDay); if (rule) body.recurrence = [rule]; }
     return { body, startDate: v.allDay ? v.date : at(v.start), endDate: v.allDay ? addDays(v.date, v.spanDays || 1) : at(endMin) };
   }
 

@@ -443,3 +443,11 @@ body.is-dragging{overflow:hidden;touch-action:none}
 .td-task.sub{margin-left:24px}
 .td-task.done .tk-box{background:var(--task)}
 .td-task.done .tk-title{text-decoration:line-through;color:var(--muted)}
+
+/* 繰り返しの詳しい指定 */
+.rdays{flex:1;display:flex;gap:4px;min-width:0}
+.rdays button{flex:1;height:34px;border-radius:8px;background:var(--soft);font-weight:700;font-size:13px;color:var(--muted);min-width:0}
+.rdays button.on{background:var(--accent);color:var(--on-accent)}
+.runit{font-size:14px;white-space:nowrap}
+#c-rint,#c-rcount{flex:0 0 72px}
+#c-rend{flex:0 0 auto}
