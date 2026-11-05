@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '202611051440'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
+  const APP_VERSION = '202611051444'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
   const SCOPES = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/tasks';
   const API = 'https://www.googleapis.com/calendar/v3';
   const WD = ['日', '月', '火', '水', '木', '金', '土'];
@@ -54,6 +54,7 @@
   function parseYMD(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
 
   function range(view = state.view, a = state.anchor) {
+    if (view === 'today') { const t = startOfDay(new Date()); return [t, addDays(t, 2)]; } // 今日と明日
     if (view === 'day') return [a, addDays(a, 1)];
     const ws = cfg('weekStart', 0); // 0=日曜 1=月曜
     if (view === 'week') { const s = addDays(a, -((a.getDay() - ws + 7) % 7)); return [s, addDays(s, 7)]; }
@@ -75,6 +76,7 @@
     v.innerHTML = '';
     renderTasks();
     if (state.view === 'month') { v.appendChild(renderMonth()); return; }
+    if (state.view === 'today') { v.appendChild(renderToday()); return; }
     if (state.view === 'week' && cfg('weekStyle', 'grid') === 'list') { v.appendChild(renderWeekList()); return; }
     const n = state.view === 'day' ? 1 : 7;
     v.appendChild(renderTimeGrid(n));
@@ -93,6 +95,7 @@
   // 見出し：月を大きく、年は小さく添える
   function titleHTML() {
     const a = state.anchor;
+    if (state.view === 'today') { const t = new Date(); return `今日<small>${t.getMonth() + 1}/${t.getDate()}（${WD[t.getDay()]}）</small>`; }
     if (state.view === 'day') return `${a.getMonth() + 1}月${a.getDate()}日`;
     if (state.view === 'week') {
       const [s, e] = range(); const last = addDays(e, -1);
@@ -166,7 +169,8 @@
         b.style.cssText = `top:${top}px;height:${h - 1}px;left:${left}%;width:calc(${width}% - 2px);z-index:${t.col + 1};--c:${t.ev.color}`;
         // 名前は上に出し、長い予定をスクロールしても見えたままにする
         b.innerHTML = `<div class="ev-in">${n === 1 && h >= 36 ? `<div class="t">${hm(t.ev.start)}〜${hm(t.ev.end)}</div>` : ''}<div class="ev-title">${esc(t.ev.title)}</div>${t.ev.location && h >= 56 ? `<div class="p">${esc(t.ev.location)}</div>` : ''}</div>`;
-        b.onclick = () => openEvent(t.ev);
+        b.onclick = () => { if (b.dataset.dragged) { delete b.dataset.dragged; return; } openEvent(t.ev); };
+        attachEventDrag(b, t.ev, root);
         col.appendChild(b);
       });
       if (sameDay(d, today)) {
@@ -199,6 +203,60 @@
   }
 
   // 週の一覧表示：1日1行で予定名を全部読める
+  // 今日の画面：今の予定と次の予定、今日のタスク、明日の予定
+  function renderToday() {
+    const now = new Date(), today = startOfDay(now), tomorrow = addDays(today, 1);
+    const root = el('div', 'td');
+    const byTime = (a, b) => (b.allDay - a.allDay) || (a.start - b.start);
+    const list = (d) => eventsOn(d).sort(byTime);
+    const evRow = (ev, d) => {
+      const it = el('button', 'wl-ev' + (!ev.allDay && ev.end <= now && sameDay(d, today) ? ' past' : '') + (!ev.allDay && ev.start <= now && ev.end > now && sameDay(d, today) ? ' now' : ''));
+      it.style.setProperty('--c', ev.color);
+      it.innerHTML = `<span class="wl-time">${ev.allDay ? '終日' : sameDay(ev.start, d) ? hm(ev.start) : '続き'}</span><span class="wl-title">${esc(ev.title)}${ev.location ? `<small>${esc(ev.location)}</small>` : ''}</span>`;
+      it.onclick = () => openEvent(ev);
+      return it;
+    };
+    const taskRow = (t) => {
+      const late = t.due && t.due < today;
+      const li = el('div', 'td-task' + (t.parent ? ' sub' : ''));
+      li.innerHTML = `<button class="tk-box" aria-label="完了にする"></button><button class="tk-title">${esc(t.title)}</button><span class="tk-due${late ? ' late' : ''}">${t.due ? (late ? `${t.due.getMonth() + 1}/${t.due.getDate()} 期限切れ` : '今日まで') : ''}</span>`;
+      li.querySelector('.tk-title').onclick = () => openTask(t);
+      li.querySelector('.tk-box').onclick = () => { li.classList.add('done'); doComplete(t); };
+      return li;
+    };
+    const section = (title, nodes, empty) => {
+      const sec = el('section', 'td-sec');
+      sec.appendChild(Object.assign(el('h3'), { textContent: title }));
+      if (nodes.length) nodes.forEach((n) => sec.appendChild(n));
+      else sec.appendChild(Object.assign(el('p', 'td-empty'), { textContent: empty }));
+      root.appendChild(sec);
+    };
+    // 次の予定
+    const todays = list(today);
+    const cur = todays.find((e) => !e.allDay && e.start <= now && e.end > now);
+    const next = todays.find((e) => !e.allDay && e.start > now);
+    if (cur || next) {
+      const box = el('div', 'td-next');
+      const mins = next ? Math.round((next.start - now) / 60000) : 0;
+      const left = mins >= 60 ? `${Math.floor(mins / 60)}時間${mins % 60 ? `${mins % 60}分` : ''}` : `${mins}分`;
+      box.innerHTML = `${cur ? `<div><b>今</b> ${esc(cur.title)}（${hm(cur.end)}まで）</div>` : ''}${next ? `<div><b>次</b> ${hm(next.start)} ${esc(next.title)}（あと${left}）</div>` : ''}`;
+      root.appendChild(box);
+    }
+    const hol = state.holidays.get(ymd(today));
+    section(hol && !todays.some((e) => e.title === hol) ? `今日の予定（${hol}）` : '今日の予定', todays.map((e) => evRow(e, today)), '予定はありません');
+    const tks = visibleTasks().filter((t) => !t.due || t.due < tomorrow);
+    section('タスク', tks.map(taskRow), 'タスクはありません');
+    const tomorrowTasks = state.tasks.filter((t) => t.due && sameDay(t.due, tomorrow));
+    const tmr = [...list(tomorrow).map((e) => evRow(e, tomorrow)), ...tomorrowTasks.map((t) => {
+      const it = el('button', 'wl-ev wl-task');
+      it.innerHTML = `<span class="wl-time">タスク</span><span class="wl-title">☐ ${esc(t.title)}</span>`;
+      it.onclick = () => openTask(t);
+      return it;
+    })];
+    section(`明日（${md(tomorrow)}）`, tmr, '予定はありません');
+    return root;
+  }
+
   function renderWeekList() {
     const [s] = range();
     const today = startOfDay(new Date());
@@ -242,6 +300,93 @@
     root.appendChild(body);
     if (todayRow) requestAnimationFrame(() => { body.scrollTop = todayRow.offsetTop; });
     return root;
+  }
+
+  // 予定を長押しして、別の時間や別の日へ動かす（離すと確認画面が出る。勝手には変えない）
+  function attachEventDrag(b, ev, root) {
+    const cal = state.calendars.find((c) => c.id === ev.calId);
+    const oneDay = sameDay(ev.start, new Date(ev.end.getTime() - 1));
+    if (!cal || !cal.writable || !oneDay) return;
+    const dur = Math.round((ev.end - ev.start) / 60000);
+    let timer = null, drag = null, sx = 0, sy = 0, grab = 0, autoT = null, lastPt = null;
+    const scroller = () => root.querySelector('.tg-scroll');
+    const cols = () => [...root.querySelectorAll('.dcol')];
+    const place = (pt) => {
+      lastPt = pt;
+      const cs = cols();
+      const col = cs.find((c) => { const r = c.getBoundingClientRect(); return pt.x >= r.left && pt.x < r.right; }) || (pt.x < cs[0].getBoundingClientRect().left ? cs[0] : cs[cs.length - 1]);
+      const y = pt.y - col.getBoundingClientRect().top - grab;
+      const start = Math.min(Math.max(Math.round(y / HOUR * 4) * 15, 0), 1440 - Math.min(dur, 1440));
+      drag.col = col; drag.start = start;
+      if (drag.ghost.parentElement !== col) col.appendChild(drag.ghost);
+      drag.ghost.style.top = `${start / 60 * HOUR}px`;
+      drag.label.textContent = `${minToHM(start)}〜${minToHM(start + dur)}`;
+    };
+    const autoScroll = () => { // 上下の端に近づいたらスクロールする
+      if (!drag) return;
+      const sc = scroller(), r = sc.getBoundingClientRect();
+      if (lastPt.y < r.top + 36) sc.scrollTop -= 8; else if (lastPt.y > r.bottom - 36) sc.scrollTop += 8;
+      place(lastPt);
+      autoT = requestAnimationFrame(autoScroll);
+    };
+    const begin = (pt) => {
+      timer = null;
+      if (navigator.vibrate) navigator.vibrate(15);
+      const r = b.getBoundingClientRect();
+      grab = Math.min(Math.max(sy - r.top, 0), r.height);
+      const ghost = el('div', 'ev ev-ghost');
+      ghost.style.cssText = `height:${b.offsetHeight}px;left:0;width:calc(100% - 2px);--c:${ev.color}`;
+      const label = el('div', 't'); ghost.appendChild(label);
+      ghost.appendChild(Object.assign(el('div', 'ev-title'), { textContent: ev.title }));
+      drag = { ghost, label, col: null, start: 0 };
+      b.classList.add('dragging');
+      document.body.classList.add('is-dragging');
+      place(pt);
+      autoT = requestAnimationFrame(autoScroll);
+    };
+    const finish = (cancelled) => {
+      clearTimeout(timer); timer = null;
+      document.removeEventListener('touchmove', onTouchMove);
+      document.removeEventListener('mousemove', onMouseMove);
+      if (!drag) return;
+      cancelAnimationFrame(autoT);
+      const { col, start, ghost } = drag;
+      ghost.remove(); drag = null;
+      b.classList.remove('dragging'); document.body.classList.remove('is-dragging');
+      b.dataset.dragged = '1';
+      setTimeout(() => { delete b.dataset.dragged; }, 400);
+      if (cancelled) return;
+      const days = cols();
+      const [s0] = range();
+      const date = addDays(s0, days.indexOf(col));
+      const same = sameDay(date, ev.start) && start === ev.start.getHours() * 60 + ev.start.getMinutes();
+      if (same) return;
+      openEdit(ev, '', 'this', { date, start, dur });
+    };
+    const onTouchMove = (e) => {
+      const t = e.touches[0];
+      if (timer) { if (Math.hypot(t.clientX - sx, t.clientY - sy) > 10) finish(true); return; }
+      if (drag) { e.preventDefault(); place({ x: t.clientX, y: t.clientY }); }
+    };
+    const onMouseMove = (e) => {
+      if (timer) { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 10) finish(true); return; }
+      if (drag) place({ x: e.clientX, y: e.clientY });
+    };
+    b.addEventListener('touchstart', (e) => {
+      const t = e.touches[0]; sx = t.clientX; sy = t.clientY;
+      document.addEventListener('touchmove', onTouchMove, { passive: false });
+      timer = setTimeout(() => begin({ x: sx, y: sy }), 450);
+    }, { passive: true });
+    b.addEventListener('touchend', () => finish(false));
+    b.addEventListener('touchcancel', () => finish(true));
+    b.addEventListener('mousedown', (e) => {
+      if (e.button) return;
+      sx = e.clientX; sy = e.clientY;
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', () => finish(false), { once: true });
+      timer = setTimeout(() => begin({ x: sx, y: sy }), 450);
+    });
+    b.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
   // 重なった予定を横に並べる
@@ -685,7 +830,7 @@
         <p class="note" style="margin-top:6px">「自動」は iPhone の設定（ライト／ダーク）に合わせます。ノートは紙の色が決まっているので切り替わりません。</p>
         ${row('予定の文字', sel('textSize', 'normal', [['small', '小'], ['normal', '標準'], ['large', '大']]))}`)}
       ${group('view', '表示', `
-        ${row('起動時の画面', sel('startView', 'last', [['last', '前回の画面'], ['day', '日'], ['week', '週'], ['month', '月']]))}
+        ${row('起動時の画面', sel('startView', 'last', [['last', '前回の画面'], ['today', '今日'], ['day', '日'], ['week', '週'], ['month', '月']]))}
         ${row('週の表示', sel('weekStyle', 'grid', [['grid', '時間軸'], ['list', '一覧']]))}
         ${row('1時間の高さ', sel('hourH', 60, [[48, '低い'], [60, '標準'], [76, '高い'], [96, 'とても高い']]))}
         ${row('週の始まり', sel('weekStart', 0, [[0, '日曜'], [1, '月曜']]))}
@@ -1422,6 +1567,7 @@
     const box = $('#tasks');
     if (!state.token && !state.demo && !state.tasks.length) { box.hidden = true; return; }
     box.hidden = false;
+    if (state.view === 'today' && (state.demo || state.tasksOk || !state.token)) { box.hidden = true; return; } // 今日の画面の中に出している
     if (state.token && !state.demo && !state.tasksOk) {
       box.innerHTML = `<div class="tk-head"><b>タスク</b><button class="link" id="tk-auth">ToDoリストを表示するには、もう一度ログイン</button></div>`;
       $('#tk-auth').onclick = () => tokenClient && tokenClient.requestAccessToken();
@@ -1521,11 +1667,17 @@
   }
 
   // 変更する（指示があればその項目だけ差し替えて確認画面へ）
-  function openEdit(ev, text, scope = 'this') {
+  function openEdit(ev, text, scope = 'this', moved) {
     const locked = scope !== 'this'; // 全体やこの日以降は、日付を動かさない（繰り返しの規則とずれるため）
     const base = eventToForm(ev);
     const v = { ...base };
     const changed = new Set();
+    if (moved) { // 動かした先の日時を入れて、長さは保つ
+      v.date = moved.date; v.allDay = false; v.start = moved.start;
+      v.end = (moved.start + moved.dur) % 1440; v.endDays = Math.floor((moved.start + moved.dur) / 1440);
+      if (!sameDay(moved.date, base.date)) changed.add('date');
+      changed.add('time');
+    }
     if (text) {
       text = applyDict(text);
       const c = window.KoeParse.parseChange(text, pOpts({ calendars: writableCals() }));
@@ -1865,6 +2017,7 @@
   // ---------- 操作 ----------
   function setView(v) { state.view = v; store.set('view', v); state.scrollTop = null; load(); }
   function shift(dir) {
+    if (state.view === 'today') { state.anchor = addDays(startOfDay(new Date()), dir); setView('day'); return; }
     const a = state.anchor;
     if (state.view === 'day') state.anchor = addDays(a, dir);
     else if (state.view === 'week') state.anchor = addDays(a, 7 * dir);

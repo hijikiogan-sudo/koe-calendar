@@ -144,3 +144,5 @@ html[data-book] .wl-row{border-bottom:1px solid var(--rule)}
 html[data-book] .wl-day{border-right:1.5px solid var(--margin-red)}
 html[data-book] .wl-ev{font-family:var(--font)}
 html[data-book] .tg-head > .week-toggle{border-right:1.5px solid var(--margin-red)}
+html[data-book] .td{padding-top:18px}
+html[data-book] .td-sec h3{color:var(--fg)}
