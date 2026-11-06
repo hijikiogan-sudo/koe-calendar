@@ -6,7 +6,8 @@ function render() {
   closeDayPop();
   hideTip();
   $('#title').innerHTML = titleHTML();
-  $('#demo-banner').hidden = !state.demo;
+  $('#demo-banner').hidden = !state.demo && !state.apple;
+  if (state.apple) $('#demo-banner').textContent = 'Appleカレンダーを表示中（試作）';
   $('#btn-show').classList.toggle('on', state.calendars.some((c) => state.hidden.has(c.id)) || state.taskLists.some((l) => state.hiddenLists.has(l.id)));
   renderConn();
   const v = $('#view');
@@ -307,7 +308,7 @@ function attachDragCreate(col, d, root) {
 function attachEventDrag(b, ev, root) {
   const cal = state.calendars.find((c) => c.id === ev.calId);
   const oneDay = sameDay(ev.start, new Date(ev.end.getTime() - 1));
-  if (!cal || !cal.writable || !oneDay) return;
+  if (!cal || !cal.writable || ev.locked || !oneDay) return;
   const dur = Math.round((ev.end - ev.start) / 60000);
   const start0 = ev.start.getHours() * 60 + ev.start.getMinutes();
   let timer = null, drag = null, sx = 0, sy = 0, grab = 0, autoT = null, lastPt = null, resizing = false, newDur = dur, armed = false, cancelledByKey = false;
@@ -473,7 +474,7 @@ function renderMonth() {
 // 月表示：マウスで予定を別の日へ動かす（離すと確認画面が出る。勝手には変えない）
 function attachMonthDrag(x, ev, d, cell, body, s0) {
   const cal = state.calendars.find((c) => c.id === ev.calId);
-  if (!cal || !cal.writable) return;
+  if (!cal || !cal.writable || ev.locked) return;
   x.classList.add('can-move');
   x.addEventListener('mousedown', (e) => {
     if (e.button || !MOUSE.matches) return;

@@ -58,6 +58,7 @@ function setDict(d) { store.set('dict', d); touchSync(); }
 // 辞書か設定が変わったら、少し待ってGoogle ToDoに保存する
 function touchSync() {
   store.set('dictAt', Date.now());
+  if (state.apple) return; // Appleカレンダーの表示中はGoogleと通信しない
   clearTimeout(dictPushTimer);
   dictPushTimer = setTimeout(() => pushDict().catch((err) => console.warn('設定の保存に失敗', err)), 800);
 }
@@ -148,7 +149,7 @@ function openShow() {
   openSheet(`<h2>表示するもの</h2>
     <div class="sec">カレンダー</div>${cals || '<p class="note">カレンダーを読み込んでいます</p>'}
     ${lists ? `<div class="sec">ToDoリスト</div>${lists}` : ''}
-    <p class="note">チェックを外すと、Koeの画面に出なくなるだけです。Googleの予定やタスクは消えません。</p>
+    <p class="note">チェックを外すと、Koeの画面に出なくなるだけです。${state.apple ? 'カレンダーの予定' : 'Googleの予定やタスク'}は消えません。</p>
     <button class="act" id="show-close">閉じる</button>`);
   const sh = $('#sheet');
   bindShowChecks(sh);
@@ -161,7 +162,7 @@ function bindShowChecks(sh) {
     set.has(id) ? set.delete(id) : set.add(id);
     const on = !set.has(id);
     b.classList.toggle('on', on); b.setAttribute('aria-checked', on);
-    store.set(isList ? 'hiddenLists' : 'hiddenCals', [...set]); touchSync();
+    if (!state.apple) { store.set(isList ? 'hiddenLists' : 'hiddenCals', [...set]); touchSync(); } // Appleの表示中の切り替えは保存しない
     // 消すほうはすぐ画面に反映し、そのあと最新を読む
     state.events = state.events.filter((ev) => !state.hidden.has(ev.calId));
     state.tasks = state.tasks.filter((t) => !state.hiddenLists.has(t.listId));
@@ -231,10 +232,11 @@ function openMenu() {
       <p class="note" style="margin-top:6px">iPhoneは「たかし」を「隆」などの漢字で書き起こします。確認画面に出た字を登録してください。「、」で区切ると複数まとめて登録できます。Google ToDoの「Koe設定」リストを使って、iPhoneとパソコンで共有します。</p>`)}
     ${MOUSE.matches ? group('keys', 'キーボード操作', KEY_HELP) : ''}
     ${group('sync', '同期とアカウント', `
-      <p class="note" style="margin-top:0">${state.demo ? 'お試し表示中です。' : state.token ? 'Googleに接続中です。開いたときと、アプリに戻ったときに自動で更新します。' : 'Googleとの接続が切れています。'}</p>
+      <p class="note" style="margin-top:0">${state.apple ? 'Appleカレンダーを表示中です（試作）。ここでの登録・変更・削除はAppleカレンダーとリマインダーに入ります。アプリを閉じるとGoogleの表示に戻ります。' : state.demo ? 'お試し表示中です。' : state.token ? 'Googleに接続中です。開いたときと、アプリに戻ったときに自動で更新します。' : 'Googleとの接続が切れています。'}</p>
       <p class="note" style="margin-top:4px">もしかしての候補：<span id="m-corpus"></span></p>
       <button class="act" id="m-corpus-reload" style="margin-top:6px">今すぐ更新</button>
-      ${state.demo
+      ${NATIVE ? `<button class="act" id="m-applecal">${state.apple ? 'Googleの表示に戻る' : 'Appleカレンダーを表示する（試作）'}</button>` : ''}
+      ${state.apple ? '' : state.demo
         ? (cfgClientId() ? '<button class="act" id="m-login">Googleでログインする</button>' : '<p class="note">Googleとつなぐには config.js にクライアントIDを設定します（SETUP.md 参照）。</p>')
         : '<button class="act" id="m-logout">ログアウト</button>'}`)}
     <p class="note">Koe ・ 版 ${APP_VERSION}<br>辞書と設定は、Google ToDoの「Koe設定」リストでiPhoneとパソコンに共有します。<br><a class="link" href="https://hijikiogan-sudo.github.io/koe-calendar/about.html" target="_blank" rel="noopener">Koeについて</a> ・ <a class="link" href="https://hijikiogan-sudo.github.io/koe-calendar/privacy.html" target="_blank" rel="noopener">プライバシーポリシー</a></p>`);
@@ -242,6 +244,7 @@ function openMenu() {
   sh.querySelectorAll('.mgroup').forEach((d) => d.addEventListener('toggle', () => { if (d.open) menuOpen.add(d.dataset.g); else menuOpen.delete(d.dataset.g); }));
   sh.querySelectorAll('select.cfg').forEach((x) => x.onchange = () => {
     const k = x.dataset.k;
+    if (state.apple && APPLE_KEEP.includes(k)) { toast('Appleの表示では、この設定は保存しません'); return; }
     const v = ['weekStart', 'monthMax', 'hourH'].includes(k) ? Number(x.value) : k === 'rokuyo' ? x.value === 'true' : x.value;
     setCfg(k, v);
     if (k === 'textSize' || k === 'hourH') applyTheme();
@@ -252,7 +255,7 @@ function openMenu() {
     if (b.dataset.c) cur[id] = b.dataset.c; else delete cur[id];
     setCfg('calColors', cur);
     applyCalColors(state.calendars);
-    store.set('calCache', state.calendars);
+    if (!state.apple) store.set('calCache', state.calendars);
     const top = sh.scrollTop; openMenu(); $('#sheet').scrollTop = top;
     load();
   });
@@ -291,6 +294,7 @@ function openMenu() {
     await run; showCorpus();
     toast(corpusStatus || '更新しました');
   };
+  const ac = $('#m-applecal'); if (ac) ac.onclick = state.apple ? leaveAppleView : enterAppleView;
   const lo = $('#m-logout'); if (lo) lo.onclick = logout;
   const li = $('#m-login'); if (li) li.onclick = () => { closeSheet(); state.demo = false; showLogin(); };
 }

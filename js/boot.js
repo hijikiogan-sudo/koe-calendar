@@ -241,6 +241,8 @@ render();
 const forceDemo = new URLSearchParams(location.search).has('demo');
 if (forceDemo || !cfgClientId()) {
   startDemo();
+} else if (isAppleView()) {
+  startApple();
 } else if (NATIVE) {
   startNative();
 } else {

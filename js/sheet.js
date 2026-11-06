@@ -94,6 +94,7 @@ async function searchEvents(word) {
     const w = word.toLowerCase();
     return demoEvents().filter((e) => (e.title + e.location).toLowerCase().includes(w));
   }
+  if (state.apple) return searchApple(word);
   if (!state.token) throw new Error('offline');
   const now = new Date();
   const cals = state.calendars.filter((c) => !isHolidayCal(c) && !state.hidden.has(c.id));
@@ -122,7 +123,7 @@ function openEvent(ev) {
   } else {
     when = sameDay(ev.start, ev.end) ? `${md(ev.start)} ${hm(ev.start)}〜${hm(ev.end)}` : `${md(ev.start)} ${hm(ev.start)} 〜 ${md(ev.end)} ${hm(ev.end)}`;
   }
-  const canEdit = !!(cal && cal.writable);
+  const canEdit = !!(cal && cal.writable && !ev.locked);
   openSheet(`
     <h2>${esc(ev.title)}</h2>
     <div class="row"><span>日時</span><span>${when}</span></div>
@@ -140,7 +141,7 @@ function openEvent(ev) {
         <button class="act" id="e-dup">複製</button>
         <button class="act danger" id="e-del">削除</button>
       </div>`
-      : '<p class="note">このカレンダーは見るだけで、変更や削除はできません。</p>'}`);
+      : `<p class="note">${ev.locked ? '出席者のいる予定は、Koeでは変更や削除ができません。' : 'このカレンダーは見るだけで、変更や削除はできません。'}</p>`}`);
   if (!canEdit) return;
 
   $('#e-form').onsubmit = (e) => {
@@ -169,7 +170,7 @@ function withScope(ev, question, next) {
 }
 
 function confirmDelete(ev, scope, when) {
-  const range = ev.recurring ? `<br><b>${SCOPE_LABEL[scope]}</b>を削除します` : '';
+  const range = (ev.recurring ? `<br><b>${SCOPE_LABEL[scope]}</b>を削除します` : '') + (state.apple && ev.recurring ? '<br>あとから元に戻せません' : '');
   openSheet(`
     <h2>${esc(ev.title)}</h2>
     <div class="e-acts"><p class="confirm-q">本当に削除しますか？<br><small>「${esc(ev.title)}」${when}${range}</small></p>
@@ -182,7 +183,8 @@ function confirmDelete(ev, scope, when) {
       const undo = await deleteEvent(ev, scope);
       closeSheet();
       load();
-      showUndo(`削除しました：${ev.title}`, async () => { await undo(); load(); });
+      if (undo) showUndo(`削除しました：${ev.title}`, async () => { await undo(); load(); });
+      else toast(`削除しました：${ev.title}`);
     } catch (err) { b.disabled = false; b.textContent = '削除する'; handleError(err); }
   };
 }

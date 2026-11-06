@@ -4,6 +4,7 @@ import AuthenticationServices
 import Capacitor
 import WebKit
 import CryptoKit
+import EventKit
 import Speech
 import UIKit
 
@@ -12,6 +13,7 @@ class KoeBridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(KoeAuthPlugin())
         bridge?.registerPluginInstance(KoeSpeechPlugin())
+        bridge?.registerPluginInstance(KoeCalendarPlugin())
         // Macで動くときは、iPad向けの画面が77%に縮小されるので、その分を拡大して元の大きさに戻す
         if ProcessInfo.processInfo.isiOSAppOnMac {
             let source = "document.querySelector('meta[name=viewport]').setAttribute('content','initial-scale=1.3,minimum-scale=1.3,maximum-scale=1.3,viewport-fit=cover')"
@@ -338,5 +340,272 @@ public class KoeSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
             self.finish(cancel: true)
             call.resolve()
         }
+    }
+}
+
+// MARK: - Appleカレンダー（試作：端末のカレンダーに入っている予定を読むだけ）
+
+@objc(KoeCalendarPlugin)
+public class KoeCalendarPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "KoeCalendarPlugin"
+    public let jsName = "KoeCalendar"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "request", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "calendars", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "events", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "save", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "remove", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "requestReminders", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "reminders", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "saveReminder", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "removeReminder", returnType: CAPPluginReturnPromise),
+    ]
+    private let store = EKEventStore()
+
+    private var allowed: Bool {
+        let status = EKEventStore.authorizationStatus(for: .event)
+        if #available(iOS 17.0, *) { return status == .fullAccess }
+        return status == .authorized
+    }
+
+    private func statusName() -> String {
+        if allowed { return "allowed" }
+        return EKEventStore.authorizationStatus(for: .event) == .notDetermined ? "notAsked" : "denied"
+    }
+
+    /// カレンダーの利用を尋ねる。答えたあとは二度と出ないので、断られたら設定アプリの案内が要る
+    @objc func request(_ call: CAPPluginCall) {
+        let done: (Bool, Error?) -> Void = { [weak self] _, _ in
+            guard let self else { return }
+            self.store.reset()
+            call.resolve(["status": self.statusName()])
+        }
+        if #available(iOS 17.0, *) {
+            store.requestFullAccessToEvents(completion: done)
+        } else {
+            store.requestAccess(to: .event, completion: done)
+        }
+    }
+
+    @objc func calendars(_ call: CAPPluginCall) {
+        guard allowed else { call.reject("カレンダーの許可がありません", "denied"); return }
+        let main = store.defaultCalendarForNewEvents?.calendarIdentifier
+        call.resolve(["calendars": store.calendars(for: .event).map { c -> [String: Any] in
+            ["id": c.calendarIdentifier, "name": c.title, "color": Self.hex(c.cgColor),
+             "writable": c.allowsContentModifications, "source": c.source?.title ?? "",
+             "isDefault": c.calendarIdentifier == main]
+        }])
+    }
+
+    /// from・to は1970年からのミリ秒
+    @objc func events(_ call: CAPPluginCall) {
+        guard allowed else { call.reject("カレンダーの許可がありません", "denied"); return }
+        guard let from = call.getDouble("from"), let to = call.getDouble("to"), from < to else {
+            call.reject("期間の指定が正しくありません"); return
+        }
+        DispatchQueue.global(qos: .userInitiated).async { [store] in
+            let predicate = store.predicateForEvents(withStart: Date(timeIntervalSince1970: from / 1000),
+                                                     end: Date(timeIntervalSince1970: to / 1000), calendars: nil)
+            let out = store.events(matching: predicate).map { e -> [String: Any] in
+                ["id": e.eventIdentifier ?? "", "calId": e.calendar?.calendarIdentifier ?? "",
+                 "title": e.title ?? "", "location": e.location ?? "", "notes": e.notes ?? "", "allDay": e.isAllDay,
+                 "start": e.startDate.timeIntervalSince1970 * 1000, "end": e.endDate.timeIntervalSince1970 * 1000,
+                 "recurring": e.hasRecurrenceRules, "locked": e.hasAttendees,
+                 "alarms": (e.alarms ?? []).map { -$0.relativeOffset / 60 }]
+            }
+            call.resolve(["events": out])
+        }
+    }
+
+    /// 繰り返しの予定は、その回の開始日時で探す
+    private func occurrence(_ id: String, _ ms: Double) -> EKEvent? {
+        let at = Date(timeIntervalSince1970: ms / 1000)
+        let predicate = store.predicateForEvents(withStart: at.addingTimeInterval(-86400), end: at.addingTimeInterval(86400), calendars: nil)
+        return store.events(matching: predicate).first { $0.eventIdentifier == id && abs($0.startDate.timeIntervalSince(at)) < 1 }
+    }
+
+    /// 繰り返しの規則。曜日は 0=日曜（JavaScriptと同じ）
+    private func recurrenceRule(_ r: JSObject) -> EKRecurrenceRule? {
+        let interval = max(r["interval"] as? Int ?? 1, 1)
+        let weekday = { (n: Int) in EKWeekday(rawValue: n + 1) }
+        let end: EKRecurrenceEnd? = (r["count"] as? Int).map { EKRecurrenceEnd(occurrenceCount: $0) }
+            ?? (r["until"] as? Double).map { EKRecurrenceEnd(end: Date(timeIntervalSince1970: $0 / 1000)) }
+        var freq = EKRecurrenceFrequency.daily
+        var days: [EKRecurrenceDayOfWeek]?
+        var monthDays: [NSNumber]?
+        switch r["freq"] as? String {
+        case "DAILY": freq = .daily
+        case "WEEKDAYS":
+            freq = .weekly
+            days = (1...5).compactMap { weekday($0) }.map { EKRecurrenceDayOfWeek($0) }
+        case "WEEKLY":
+            freq = .weekly
+            days = (r["days"] as? [Int] ?? []).compactMap { weekday($0) }.map { EKRecurrenceDayOfWeek($0) }
+        case "MONTHLY":
+            freq = .monthly
+            if r["monthEnd"] as? Bool == true { monthDays = [-1] }
+            if let n = r["nth"] as? Int, let w = (r["weekday"] as? Int).flatMap(weekday) { days = [EKRecurrenceDayOfWeek(w, weekNumber: n)] }
+        case "YEARLY": freq = .yearly
+        default: return nil
+        }
+        return EKRecurrenceRule(recurrenceWith: freq, interval: interval, daysOfTheWeek: days, daysOfTheMonth: monthDays,
+                                monthsOfTheYear: nil, weeksOfTheYear: nil, daysOfTheYear: nil, setPositions: nil, end: end)
+    }
+
+    /// 登録と変更。id があれば変更。scope は this / following / all
+    @objc func save(_ call: CAPPluginCall) {
+        guard allowed else { call.reject("カレンダーの許可がありません", "denied"); return }
+        guard let startMs = call.getDouble("start"), let endMs = call.getDouble("end"), let calId = call.getString("calId"),
+              let calendar = store.calendar(withIdentifier: calId), calendar.allowsContentModifications else {
+            call.reject("このカレンダーには書き込めません"); return
+        }
+        let scope = call.getString("scope") ?? "this"
+        var start = Date(timeIntervalSince1970: startMs / 1000)
+        let allDay = call.getBool("allDay") ?? false
+        // Koeの終日の終わりは次の日の0時。Appleは最後の日の中に置く
+        let duration = (endMs - startMs) / 1000 - (allDay ? 1 : 0)
+        let event: EKEvent
+        if let id = call.getString("id") {
+            guard let occ = call.getDouble("occurrence"), let found = occurrence(id, occ) else {
+                call.reject("予定が見つかりませんでした。読み直してください"); return
+            }
+            if scope == "all", found.hasRecurrenceRules {
+                // すべての日：最初の回を、同じだけずらす（繰り返しの開始日を動かさない）
+                guard let first = store.event(withIdentifier: id) else { call.reject("予定が見つかりませんでした"); return }
+                start = first.startDate.addingTimeInterval(start.timeIntervalSince(found.startDate))
+                event = first
+            } else {
+                event = found
+            }
+        } else {
+            event = EKEvent(eventStore: store)
+            if let r = call.getObject("recur"), let rule = recurrenceRule(r) { event.addRecurrenceRule(rule) }
+        }
+        event.calendar = calendar
+        event.title = call.getString("title") ?? ""
+        let location = call.getString("location") ?? ""
+        event.location = location.isEmpty ? nil : location
+        if let notes = call.getString("notes") { event.notes = notes.isEmpty ? nil : notes }
+        event.isAllDay = allDay
+        event.startDate = start
+        event.endDate = start.addingTimeInterval(duration)
+        if let minutes = call.getArray("alarms") as? [Double] { event.alarms = minutes.map { EKAlarm(relativeOffset: -$0 * 60) } }
+        do {
+            try store.save(event, span: event.hasRecurrenceRules && scope != "this" ? .futureEvents : .thisEvent, commit: true)
+            call.resolve(["id": event.eventIdentifier ?? ""])
+        } catch {
+            call.reject("保存できませんでした：\(error.localizedDescription)")
+        }
+    }
+
+    @objc func remove(_ call: CAPPluginCall) {
+        guard allowed else { call.reject("カレンダーの許可がありません", "denied"); return }
+        let scope = call.getString("scope") ?? "this"
+        guard let id = call.getString("id"),
+              let target = scope == "all" ? store.event(withIdentifier: id) : call.getDouble("occurrence").flatMap({ occurrence(id, $0) }) else {
+            call.reject("予定が見つかりませんでした。読み直してください"); return
+        }
+        do {
+            try store.remove(target, span: target.hasRecurrenceRules && scope != "this" ? .futureEvents : .thisEvent, commit: true)
+            call.resolve()
+        } catch {
+            call.reject("削除できませんでした：\(error.localizedDescription)")
+        }
+    }
+
+    // MARK: リマインダー（Koeのタスクとして使う）
+
+    private var remindersAllowed: Bool {
+        let status = EKEventStore.authorizationStatus(for: .reminder)
+        if #available(iOS 17.0, *) { return status == .fullAccess }
+        return status == .authorized
+    }
+
+    @objc func requestReminders(_ call: CAPPluginCall) {
+        let done: (Bool, Error?) -> Void = { [weak self] _, _ in
+            guard let self else { return }
+            call.resolve(["status": self.remindersAllowed ? "allowed" : "denied"])
+        }
+        if #available(iOS 17.0, *) {
+            store.requestFullAccessToReminders(completion: done)
+        } else {
+            store.requestAccess(to: .reminder, completion: done)
+        }
+    }
+
+    private static func ymd(_ c: DateComponents?) -> String? {
+        guard let c, let y = c.year, let m = c.month, let d = c.day else { return nil }
+        return String(format: "%04d-%02d-%02d", y, m, d)
+    }
+
+    /// リストと、まだ終わっていないリマインダー
+    @objc func reminders(_ call: CAPPluginCall) {
+        guard remindersAllowed else { call.reject("リマインダーの許可がありません", "denied"); return }
+        let main = store.defaultCalendarForNewReminders()?.calendarIdentifier
+        let lists = store.calendars(for: .reminder).map { c -> [String: Any] in
+            ["id": c.calendarIdentifier, "title": c.title, "writable": c.allowsContentModifications, "isDefault": c.calendarIdentifier == main]
+        }
+        store.fetchReminders(matching: store.predicateForIncompleteReminders(withDueDateStarting: nil, ending: nil, calendars: nil)) { items in
+            let out = (items ?? []).map { r -> [String: Any] in
+                var one: [String: Any] = ["id": r.calendarItemIdentifier, "listId": r.calendar?.calendarIdentifier ?? "",
+                                          "title": r.title ?? "", "notes": r.notes ?? ""]
+                if let due = Self.ymd(r.dueDateComponents) { one["due"] = due }
+                return one
+            }
+            call.resolve(["lists": lists, "reminders": out])
+        }
+    }
+
+    /// 登録と変更。id があれば変更。done で完了・未完了を切り替える
+    @objc func saveReminder(_ call: CAPPluginCall) {
+        guard remindersAllowed else { call.reject("リマインダーの許可がありません", "denied"); return }
+        let item: EKReminder
+        if let id = call.getString("id") {
+            guard let found = store.calendarItem(withIdentifier: id) as? EKReminder else {
+                call.reject("リマインダーが見つかりませんでした。読み直してください"); return
+            }
+            item = found
+        } else {
+            guard let listId = call.getString("listId"), let list = store.calendar(withIdentifier: listId), list.allowsContentModifications else {
+                call.reject("このリストには書き込めません"); return
+            }
+            item = EKReminder(eventStore: store)
+            item.calendar = list
+        }
+        if let title = call.getString("title") { item.title = title }
+        if let notes = call.getString("notes"), !notes.isEmpty { item.notes = notes }
+        if let done = call.getBool("done") { item.isCompleted = done }
+        if call.getBool("noDue") == true {
+            item.dueDateComponents = nil
+        } else if let due = call.getString("due"), due != Self.ymd(item.dueDateComponents) {
+            // 日が変わったときだけ入れ直す（時刻つきのリマインダーの時刻を消さない）
+            let p = due.split(separator: "-").compactMap { Int($0) }
+            if p.count == 3 { item.dueDateComponents = DateComponents(year: p[0], month: p[1], day: p[2]) }
+        }
+        do {
+            try store.save(item, commit: true)
+            call.resolve(["id": item.calendarItemIdentifier])
+        } catch {
+            call.reject("保存できませんでした：\(error.localizedDescription)")
+        }
+    }
+
+    @objc func removeReminder(_ call: CAPPluginCall) {
+        guard remindersAllowed else { call.reject("リマインダーの許可がありません", "denied"); return }
+        guard let id = call.getString("id"), let item = store.calendarItem(withIdentifier: id) as? EKReminder else {
+            call.reject("リマインダーが見つかりませんでした。読み直してください"); return
+        }
+        do {
+            try store.remove(item, commit: true)
+            call.resolve()
+        } catch {
+            call.reject("削除できませんでした：\(error.localizedDescription)")
+        }
+    }
+
+    private static func hex(_ color: CGColor?) -> String {
+        guard let color, let rgb = color.converted(to: CGColorSpaceCreateDeviceRGB(), intent: .defaultIntent, options: nil),
+              let c = rgb.components, c.count >= 3 else { return "#2f5d8a" }
+        return String(format: "#%02x%02x%02x", Int(c[0] * 255), Int(c[1] * 255), Int(c[2] * 255))
     }
 }

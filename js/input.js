@@ -81,7 +81,7 @@ let pendingSlot = null; // 長押し後に「文字で入力する」を選ん�
 function slotLabel(slot) { return slot.start != null ? `${md(slot.date)} ${minToHM(slot.start)}` : `${md(slot.date)}`; }
 
 function startSlot(slot, markParent, markTop) {
-  if (!writableCals().length) { toast('書き込めるカレンダーがありません'); return; }
+  if (!writableCals().length) { toast(noWriteMsg()); return; }
   if (navigator.vibrate) navigator.vibrate(15);
   document.querySelectorAll('.slot-mark').forEach((m) => m.remove());
   if (markParent) {

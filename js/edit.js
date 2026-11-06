@@ -9,6 +9,7 @@ const memoCalId = () => {
   return (w.some((c) => c.id === id) ? id : (w.find((c) => /自分用/.test(c.name)) || w.find((c) => c.primary) || w[0] || {}).id) || '';
 };
 function openMemo(date, initial) {
+  if (state.apple) { toast('試作中のため、Appleカレンダーにはメモを書けません'); return; }
   const cur = state.diary.get(ymd(date));
   const text = cur ? cur.description || '' : '';
   const value = initial ? (text ? `${text}\n${initial}` : initial) : text;
@@ -175,6 +176,7 @@ function eventBody(v) {
 // 登録して、取り消す処理を返す
 async function insertEvent(v) {
   const { body, startDate, endDate } = eventBody(v);
+  if (state.apple) return insertApple(v, body, startDate, endDate);
   if (state.demo) {
     const c = state.calendars.find((x) => x.id === v.calId);
     const id = 'demo' + Date.now();
@@ -191,6 +193,7 @@ async function insertEvent(v) {
 async function updateEvent(ev, v, scope = 'this') {
   const { body, startDate, endDate } = eventBody(scope === 'this' ? { ...v, recur: null } : v);
   delete body.recurrence; // 繰り返しの規則は下で範囲ごとに扱う
+  if (state.apple) { await updateApple(ev, v, body, startDate, endDate, scope); return; }
   if (state.demo) {
     const x = demoEvents().find((e) => e.id === ev.id);
     const c = state.calendars.find((k) => k.id === v.calId);
@@ -254,6 +257,7 @@ function isFirstOf(ev, master) {
 
 // 削除して、元に戻す処理を返す
 async function deleteEvent(ev, scope = 'this') {
+  if (state.apple) return deleteApple(ev, scope);
   const path = (id) => `/calendars/${encodeURIComponent(ev.calId)}/events/${encodeURIComponent(id)}`;
   if (state.demo) {
     demoStore = demoEvents().filter((e) => e.id !== ev.id);

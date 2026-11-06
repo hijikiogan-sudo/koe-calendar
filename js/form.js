@@ -36,6 +36,7 @@ function recurText(r, d) {
   return t;
 }
 const writableCals = () => state.calendars.filter((c) => c.writable);
+const noWriteMsg = () => '書き込めるカレンダーがありません';
 
 // v: {kind,calId,title,date,noDue,allDay,start,end,location,remind,spanDays}
 // opt: {heading, heard, okLabel, busyLabel, changed:Set, keepRemind, fixedKind, onOk(v)}
@@ -102,7 +103,7 @@ function openForm(v, opt) {
     kind = k;
     sh.classList.toggle('as-task', k === 'task');
     sh.querySelectorAll('.kind-seg button').forEach((b) => b.classList.toggle('on', b.dataset.k === k));
-    $('#c-kind-note').textContent = k === 'task' ? 'Google ToDoリストに入ります' : 'Googleカレンダーに入ります';
+    $('#c-kind-note').textContent = k === 'task' ? (state.apple ? 'Appleのリマインダーに入ります' : 'Google ToDoリストに入ります') : state.apple ? 'Appleカレンダーに入ります' : 'Googleカレンダーに入ります';
     $('#c-date-l').textContent = k === 'task' ? '期限' : '日付';
     $('#c-date').disabled = k === 'task' && $('#c-nodue').checked;
   };
@@ -438,9 +439,10 @@ function openConfirm(text, slot, raw) {
     if (cmd) { runCommand(cmd, text); return; }
   }
   const cals = writableCals();
-  if (!cals.length) { toast('書き込めるカレンダーがありません'); return; }
+  if (!cals.length) { toast(noWriteMsg()); return; }
   const p = window.KoeParse.parse(text, pOpts({ calendars: cals }));
   if (!p.calSaid && cals.some((c) => c.id === cfg('defCal', ''))) p.calId = cfg('defCal', '');
+  if (state.apple && !p.calSaid && cals.some((c) => c.id === store.get('appleCal', ''))) p.calId = store.get('appleCal', ''); // 前回選んだカレンダー
   if (p.kind === 'task' && !p.taskWord && cfg('noTimeKind', 'task') === 'event') p.kind = 'event'; // 時刻のない文の扱い
   p.title = applyDictField(p.title); p.location = applyDictField(p.location);
   // 過去に予定として使った言葉（に近いもの）は、時刻がなくても終日の予定にする
@@ -452,17 +454,20 @@ function openConfirm(text, slot, raw) {
     if (!p.dateSaid) p.date = slot.date;
     if (p.allDay && slot.start != null) { p.allDay = false; p.start = slot.start; p.end = slot.end != null ? slot.end : slot.start + 60; p.kind = 'event'; }
   }
+  // リマインダーの許可がないときは、時間のない文を終日の予定にする
+  const asEvent = state.apple && !state.appleTasks && p.kind === 'task';
   openForm({
-    kind: p.kind, calId: p.calId, title: p.title, date: p.date, noDue: p.kind === 'task' && !p.dateSaid && !slot,
-    allDay: p.allDay, start: p.start, end: p.end,
+    kind: asEvent ? 'event' : p.kind, calId: p.calId, title: p.title, date: p.date || startOfDay(new Date()), noDue: p.kind === 'task' && !p.dateSaid && !slot && !asEvent,
+    allDay: asEvent ? true : p.allDay, start: p.start != null ? p.start : asEvent ? 540 : p.start, end: p.end != null ? p.end : asEvent ? 600 : p.end,
     location: p.location, remind: p.remind ? String(p.remind.minutes) : cfg('defRemind', ''), remindLabel: p.remind && p.remind.label,
     spanDays: p.spanDays, endDays: p.endDays, recur: p.recur,
     listId: (p.calSaid && state.taskLists.find((l) => { const c = cals.find((x) => x.id === p.calId); return c && (c.name.includes(l.title) || l.title.includes(c.name)); }) || {}).id,
   }, {
-    heading: 'この内容で登録しますか？', heard: text, busyLabel: '登録中…', allowRecur: true, quick: true,
+    heading: 'この内容で登録しますか？', heard: text, busyLabel: '登録中…', allowRecur: true, quick: true, fixedKind: !!state.apple && !state.appleTasks,
     onFixed: (title, location) => { p.title = title; p.location = location; }, // 直した後を基準に、案内の重複を防ぐ
     onOk: async (v) => {
       const undo = v.kind === 'task' ? await insertTask(v) : await insertEvent(v);
+      if (state.apple && v.kind !== 'task') store.set('appleCal', v.calId);
       noteCorpus(v);
       setInText('');
       showUndo(`${v.kind === 'task' ? 'タスクを' : ''}登録しました：${v.title}${hiddenNote(v)}`, async () => { await undo(); load(); });

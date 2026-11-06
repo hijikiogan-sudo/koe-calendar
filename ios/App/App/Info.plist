@@ -2,6 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>リマインダーをKoeのタスクとして表示・登録するために使います。</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>リマインダーをKoeのタスクとして表示・登録するために使います。</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>カレンダーの予定をKoeで表示・登録・変更するために使います。</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>カレンダーの予定をKoeで表示・登録・変更するために使います。</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>声で予定やタスクを入れるためにマイクを使います。</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
