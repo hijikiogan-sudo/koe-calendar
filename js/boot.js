@@ -160,6 +160,9 @@ function bind() {
   });
   $('#intext').addEventListener('blur', () => { if (pendingSlot && !$('#intext').value.trim()) setTimeout(clearSlot, 200); });
 
+  // 右のタスク欄のオン・オフ
+  $('#btn-tasks').onclick = () => { store.set('tasksSide', !sideTasks()); render(); };
+
   // キーボード：Escで閉じる、左右の矢印で前後へ
   document.addEventListener('keydown', (e) => {
     if (e.isComposing) return;

@@ -184,7 +184,7 @@ function renderToday() {
   const hol = state.holidays.get(ymd(today));
   section(hol && !todays.some((e) => e.title === hol) ? `今日の予定（${hol}）` : '今日の予定', todays.map((e) => evRow(e, today)), '予定はありません');
   const tks = visibleTasks().filter((t) => !t.due || t.due < tomorrow);
-  if (!WIDE.matches) section('タスク', tks.map(taskRow), 'タスクはありません'); // 広い画面では右の欄に出ている
+  if (!sideTasks()) section('タスク', tks.map(taskRow), 'タスクはありません'); // 広い画面では右の欄に出ている
   const tomorrowTasks = state.tasks.filter((t) => t.due && sameDay(t.due, tomorrow));
   const tmr = [...list(tomorrow).map((e) => evRow(e, tomorrow)), ...tomorrowTasks.map((t) => {
     const it = el('button', 'wl-ev wl-task');

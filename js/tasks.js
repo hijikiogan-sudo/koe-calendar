@@ -92,16 +92,22 @@ function visibleTasks() {
 
 function renderTasks() {
   const box = $('#tasks');
+  const btn = $('#btn-tasks');
+  const side = sideTasks();
+  btn.setAttribute('aria-pressed', side);
+  btn.classList.toggle('on', side);
+  btn.title = side ? 'タスク欄を隠す' : 'タスク欄を表示';
+  if (WIDE.matches && !side) { box.hidden = true; return; }
   if (!state.token && !state.demo && !state.tasks.length) { box.hidden = true; return; }
   box.hidden = false;
-  if (state.view === 'today' && !WIDE.matches && (state.demo || state.tasksOk || !state.token)) { box.hidden = true; return; } // 今日の画面の中に出している
+  if (state.view === 'today' && !side && (state.demo || state.tasksOk || !state.token)) { box.hidden = true; return; } // 今日の画面の中に出している
   if (state.token && !state.demo && !state.tasksOk) {
     box.innerHTML = `<div class="tk-head"><b>タスク</b><button class="link" id="tk-auth">ToDoリストを表示するには、もう一度ログイン</button></div>`;
     $('#tk-auth').onclick = () => tokenClient && tokenClient.requestAccessToken();
     return;
   }
   const list = visibleTasks();
-  const open = WIDE.matches || store.get('tasksOpen', true); // 広い画面では右に常に出す
+  const open = side || store.get('tasksOpen', true); // 広い画面では右に常に出す
   const today = startOfDay(new Date());
   box.innerHTML = `
     <button class="tk-head" id="tk-toggle" aria-expanded="${open}"><b>タスク</b><span class="tk-n">${list.length}</span><span class="tk-arrow">${open ? '▾' : '▸'}</span></button>
@@ -111,7 +117,7 @@ function renderTasks() {
         <button class="tk-title">${esc(t.title)}${state.taskLists.length > 1 && t.listTitle ? `<small>${esc(t.listTitle)}</small>` : ''}</button>
         <span class="tk-due${late ? ' late' : ''}">${t.due ? `${t.due.getMonth() + 1}/${t.due.getDate()}（${WD[t.due.getDay()]}）${late ? ' 期限切れ' : ''}` : '期限なし'}</span></li>`;
     }).join('') || '<li class="tk-empty">この期間のタスクはありません</li>'}</ul>`;
-  $('#tk-toggle').onclick = () => { if (WIDE.matches) return; store.set('tasksOpen', !open); renderTasks(); };
+  $('#tk-toggle').onclick = () => { if (side) return; store.set('tasksOpen', !open); renderTasks(); };
   box.querySelectorAll('li[data-id]').forEach((li) => {
     const t = state.tasks.find((x) => x.id === li.dataset.id);
     li.querySelector('.tk-title').onclick = () => openTask(t);

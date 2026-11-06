@@ -1,5 +1,11 @@
 /* Koe：パソコンなど広い画面のレイアウト（スマホの見た目は変えない） */
+#btn-tasks{display:none}
 @media (min-width:900px){
+  /* タスク欄のオン・オフ */
+  #btn-tasks{display:flex}
+  #btn-tasks.on{background:var(--soft)}
+  html[data-book] #btn-tasks.on{background:rgba(0,0,0,.22)}
+
   /* 全体：上に見出し、左に手帳、右にタスク */
   #app{display:grid;max-width:1600px;position:relative;
     grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto minmax(0,1fr) auto;
