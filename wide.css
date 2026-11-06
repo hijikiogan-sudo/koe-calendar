@@ -77,3 +77,19 @@
 }
 
 kbd{font:inherit;font-size:12px;font-weight:700;padding:1px 7px;border-radius:5px;background:var(--soft);border:1px solid var(--line);white-space:nowrap}
+
+/* マウスを乗せたときの内容 */
+.hover-tip{position:fixed;z-index:25;width:max-content;max-width:300px;max-height:60dvh;overflow:hidden;padding:10px 12px;border-radius:10px;
+  background:var(--surface);color:var(--fg);box-shadow:var(--shadow-md),0 0 0 1px var(--line);font-size:13px;line-height:1.5;pointer-events:none;overflow-wrap:anywhere}
+.hover-tip b{display:block;font-size:14px;font-weight:700}
+.ht-sub{color:var(--muted);font-size:12px}
+.ht-line{margin-top:2px}
+.ht-cal{margin-top:4px;font-size:12px;color:var(--muted)}
+.ht-cal::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c);margin-right:5px}
+.ht-memo{margin-top:6px;padding-top:6px;border-top:1px solid var(--line);white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
+
+/* 月表示で動かすとき */
+.m-ghost{position:fixed;left:0;top:0;z-index:30;max-width:220px;padding:3px 8px;border-radius:6px;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  background:var(--surface);color:var(--fg);border-left:3px solid var(--c);box-shadow:0 6px 18px rgba(0,0,0,.3);pointer-events:none}
+.mc.drop-target{outline:2px solid var(--accent);outline-offset:-2px;background-color:var(--accent-ring)}
+@media (hover:hover) and (pointer:fine){.mc .m-ev.can-move{cursor:grab}}

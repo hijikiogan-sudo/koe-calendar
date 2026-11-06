@@ -4,6 +4,7 @@
 function render() {
   document.querySelectorAll('.seg button').forEach((b) => b.classList.toggle('on', b.dataset.view === state.view));
   closeDayPop();
+  hideTip();
   $('#title').innerHTML = titleHTML();
   $('#demo-banner').hidden = !state.demo;
   renderConn();
@@ -75,6 +76,7 @@ function renderTimeGrid(n) {
       const c = el('button', 'chip');
       c.style.setProperty('--c', ev.color); c.textContent = ev.title;
       c.onclick = () => openEvent(ev);
+      setTip(c, ev);
       cell.appendChild(c);
     });
     allday.appendChild(cell);
@@ -109,6 +111,7 @@ function renderTimeGrid(n) {
       b.innerHTML = `<div class="ev-grip" aria-hidden="true"></div><div class="ev-in">${n === 1 && h >= 36 ? `<div class="t">${hm(t.ev.start)}〜${hm(t.ev.end)}</div>` : ''}<div class="ev-title">${esc(t.ev.title)}</div>${t.ev.location && h >= 56 ? `<div class="p">${esc(t.ev.location)}</div>` : ''}</div>`;
       b.onclick = () => { if (b.dataset.dragged) { delete b.dataset.dragged; return; } openEvent(t.ev); };
       attachEventDrag(b, t.ev, root);
+      setTip(b, t.ev);
       col.appendChild(b);
     });
     if (sameDay(d, today)) {
@@ -122,7 +125,7 @@ function renderTimeGrid(n) {
       const y = pt.y - col.getBoundingClientRect().top;
       const start = Math.min(Math.max(Math.floor(y / HOUR * 2) / 2, 0), 23.5) * 60;
       startSlot({ date: d, start }, col, start / 60 * HOUR);
-    });
+    }, true);
     attachDragCreate(col, d, root);
     body.appendChild(col);
   });
@@ -153,6 +156,7 @@ function renderToday() {
     it.style.setProperty('--c', ev.color);
     it.innerHTML = `<span class="wl-time">${ev.allDay ? '終日' : sameDay(ev.start, d) ? hm(ev.start) : '続き'}</span><span class="wl-title">${esc(ev.title)}${ev.location ? `<small>${esc(ev.location)}</small>` : ''}</span>`;
     it.onclick = () => openEvent(ev);
+    setTip(it, ev);
     return it;
   };
   const taskRow = (t) => {
@@ -224,6 +228,7 @@ function renderWeekList() {
       const time = ev.allDay ? '終日' : sameDay(ev.start, d) ? hm(ev.start) : '続き';
       it.innerHTML = `<span class="wl-time">${time}</span><span class="wl-title">${esc(ev.title)}${ev.location ? `<small>${esc(ev.location)}</small>` : ''}</span>`;
       it.onclick = () => openEvent(ev);
+      setTip(it, ev);
       items.appendChild(it);
     });
     state.tasks.filter((t) => t.due && sameDay(t.due, d)).forEach((t) => {
@@ -446,15 +451,137 @@ function renderMonth() {
       const x = el('div', 'm-ev ' + (ev.task ? 'task' : ev.allDay ? 'allday' : 'timed'));
       if (!ev.task) { x.style.setProperty('--c', ev.color); x.style.setProperty('--ct', ev.text || '#fff'); }
       x.textContent = ev.title;
+      setTip(x, ev);
       cell.appendChild(x);
+      if (!ev.task) attachMonthDrag(x, ev, d, cell, body, s);
     });
-    if (evs.length > max) cell.appendChild(Object.assign(el('div', 'more'), { textContent: `ほか${evs.length - (max - 1)}件` }));
+    if (evs.length > max) {
+      const more = Object.assign(el('div', 'more'), { textContent: `ほか${evs.length - (max - 1)}件` });
+      setTip(more, { list: evs.slice(max - 1) });
+      cell.appendChild(more);
+    }
     cell.onclick = () => openDayPop(d, cell); // その日の予定を吹き出しで出す
     attachLongPress(cell, () => startSlot({ date: d, start: null }, null)); // 月表示は日付だけ
     body.appendChild(cell);
   }
   root.appendChild(body);
   return root;
+}
+
+// 月表示：マウスで予定を別の日へ動かす（離すと確認画面が出る。勝手には変えない）
+function attachMonthDrag(x, ev, d, cell, body, s0) {
+  const cal = state.calendars.find((c) => c.id === ev.calId);
+  if (!cal || !cal.writable) return;
+  x.classList.add('can-move');
+  x.addEventListener('mousedown', (e) => {
+    if (e.button || !MOUSE.matches) return;
+    const sx = e.clientX, sy = e.clientY;
+    let ghost = null, target = null;
+    const cellAt = (px, py) => [...body.children].find((c) => { const r = c.getBoundingClientRect(); return px >= r.left && px < r.right && py >= r.top && py < r.bottom; }) || null;
+    const mark = (c) => {
+      if (target) target.classList.remove('drop-target');
+      target = c;
+      if (target && target !== cell) target.classList.add('drop-target');
+    };
+    const stop = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('keydown', onKey, true);
+      document.body.classList.remove('is-dragging');
+      if (ghost) ghost.remove();
+      mark(null);
+    };
+    const onMove = (m) => {
+      if (!ghost) {
+        if (Math.hypot(m.clientX - sx, m.clientY - sy) <= 6) return;
+        ghost = el('div', 'm-ghost');
+        ghost.textContent = ev.title;
+        ghost.style.setProperty('--c', ev.color);
+        document.body.appendChild(ghost);
+        document.body.classList.add('is-dragging');
+        hideTip();
+      }
+      ghost.style.transform = `translate(${m.clientX + 10}px, ${m.clientY + 8}px)`;
+      mark(cellAt(m.clientX, m.clientY));
+    };
+    const suppressClick = () => { // 動かしたあとの「押した」扱いで吹き出しが開かないように
+      cell.dataset.fired = '1';
+      setTimeout(() => { delete cell.dataset.fired; }, 300);
+    };
+    const onUp = () => {
+      const moved = !!ghost, to = target;
+      stop();
+      if (!moved) return;
+      suppressClick();
+      if (!to || to === cell) return;
+      const days = Math.round((addDays(s0, [...body.children].indexOf(to)) - d) / 86400000);
+      openEdit(ev, '', 'this', { dayOnly: true, date: addDays(startOfDay(ev.start), days) });
+    };
+    const onKey = (k) => { if (k.key === 'Escape' && ghost) { k.stopPropagation(); stop(); suppressClick(); } };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    document.addEventListener('keydown', onKey, true);
+  });
+}
+
+// ---------- マウスを乗せると内容を出す ----------
+const tips = new WeakMap();
+const setTip = (node, data) => tips.set(node, data);
+let tipTimer = null, tipFor = null;
+function hideTip() {
+  clearTimeout(tipTimer); tipFor = null;
+  const t = $('#hover-tip');
+  if (t) t.hidden = true;
+}
+function tipTime(ev) {
+  if (ev.allDay) {
+    const last = addDays(startOfDay(ev.end), -1);
+    return sameDay(ev.start, last) ? `${md(ev.start)} 終日` : `${md(ev.start)}〜${md(last)} 終日`;
+  }
+  return sameDay(ev.start, ev.end) ? `${md(ev.start)} ${hm(ev.start)}〜${hm(ev.end)}` : `${md(ev.start)} ${hm(ev.start)}〜${md(ev.end)} ${hm(ev.end)}`;
+}
+function tipHTML(d) {
+  if (d.list) return d.list.map((x) => `<div class="ht-line">${x.task ? '☐ ' : x.allDay ? '' : `${hm(x.start)} `}${esc(x.title)}</div>`).join('');
+  if (d.task) return `<b>☐ ${esc(d.title)}</b><div class="ht-sub">タスク</div>`;
+  const cal = state.calendars.find((c) => c.id === d.calId);
+  const memo = (d.description || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '').trim();
+  return `<b>${esc(d.title)}</b><div class="ht-sub">${esc(tipTime(d))}</div>
+    ${d.location ? `<div class="ht-line">📍 ${esc(d.location)}</div>` : ''}
+    ${cal ? `<div class="ht-cal" style="--c:${d.color || cal.color}">${esc(cal.name)}${d.recurring ? '・繰り返し' : ''}</div>` : ''}
+    ${memo ? `<div class="ht-memo">${esc(memo)}</div>` : ''}`;
+}
+function placeTip(tip, node) {
+  const r = node.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+  const left = r.right + 8 + w < innerWidth ? r.right + 8 : Math.max(8, r.left - 8 - w);
+  tip.style.left = `${left}px`;
+  tip.style.top = `${Math.min(Math.max(8, r.top), innerHeight - h - 8)}px`;
+}
+function initHoverTip() {
+  const tip = el('div', 'hover-tip');
+  tip.id = 'hover-tip'; tip.hidden = true;
+  document.body.appendChild(tip);
+  const v = $('#view');
+  v.addEventListener('mousemove', (e) => {
+    if (!MOUSE.matches || document.body.classList.contains('is-dragging') || document.body.classList.contains('is-picking')) return;
+    let node = e.target.closest('.ev, .chip, .m-ev, .more, .wl-ev');
+    if (!node) { // ボタンの中の字に反応しないブラウザでは、位置で探す
+      const mc = e.target.closest('.mc');
+      if (mc) node = [...mc.querySelectorAll('.m-ev, .more')].find((c) => { const r = c.getBoundingClientRect(); return e.clientX >= r.left && e.clientX < r.right && e.clientY >= r.top && e.clientY < r.bottom; });
+    }
+    if (!node || !tips.has(node)) { hideTip(); return; }
+    if (node === tipFor) return;
+    hideTip();
+    tipFor = node;
+    tipTimer = setTimeout(() => {
+      if (!node.isConnected) return;
+      tip.innerHTML = tipHTML(tips.get(node));
+      tip.hidden = false;
+      placeTip(tip, node);
+    }, 350);
+  });
+  v.addEventListener('mouseleave', hideTip);
+  v.addEventListener('mousedown', hideTip);
+  v.addEventListener('scroll', hideTip, true);
 }
 
 // ---------- 月表示：日付を押すとその日の予定を吹き出しで出す ----------

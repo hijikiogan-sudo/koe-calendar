@@ -235,10 +235,11 @@ function openForm(v, opt) {
   };
   $('#c-cancel').onclick = closeSheet;
   $('#c-ok').onclick = async () => {
+    if (!$('#c-title').value.trim()) { toast('内容を入力してください'); $('#c-title').focus(); return; } // 空のままでは登録しない
     const out = {
       kind,
       calId,
-      title: $('#c-title').value.trim() || (kind === 'task' ? 'タスク' : '予定'),
+      title: $('#c-title').value.trim(),
       location: $('#c-loc').value.trim(),
       date: parseYMD($('#c-date').value),
       noDue: kind === 'task' && $('#c-nodue').checked,

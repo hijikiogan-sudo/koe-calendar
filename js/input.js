@@ -107,11 +107,12 @@ function clearSlot() {
 }
 
 // 長押しを検出。指が動いたら（スクロール）取り消す
-function attachLongPress(target, onFire) {
+function attachLongPress(target, onFire, touchOnly) {
   let timer = null, sx = 0, sy = 0;
   const cancel = () => { clearTimeout(timer); timer = null; };
   target.addEventListener('pointerdown', (e) => {
     if (e.button > 0 || e.target.closest('.ev, .chip, .m-ev')) return;
+    if (touchOnly && e.pointerType === 'mouse') return; // マウスはなぞる操作を使う
     sx = e.clientX; sy = e.clientY;
     const pt = { x: e.clientX, y: e.clientY };
     cancel();

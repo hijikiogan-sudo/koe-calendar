@@ -107,7 +107,10 @@ function openEdit(ev, text, scope = 'this', moved, master) {
   const recNow = master ? window.KoeParse.parseRule(master.recurrence) : null;
   if (recNow) v.recur = recNow;
   const changed = new Set();
-  if (moved) { // 動かした先の日時を入れて、長さは保つ
+  if (moved && moved.dayOnly) { // 月表示：日付だけ動かす。時間と長さはそのまま
+    v.date = moved.date;
+    if (!sameDay(moved.date, base.date)) changed.add('date');
+  } else if (moved) { // 動かした先の日時を入れて、長さは保つ
     v.date = moved.date; v.allDay = false; v.start = moved.start;
     v.end = (moved.start + moved.dur) % 1440; v.endDays = Math.floor((moved.start + moved.dur) / 1440);
     if (!sameDay(moved.date, base.date)) changed.add('date');

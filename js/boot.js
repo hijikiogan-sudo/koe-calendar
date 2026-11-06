@@ -168,6 +168,7 @@ function bind() {
   });
   $('#intext').addEventListener('blur', () => { if (pendingSlot && !$('#intext').value.trim()) setTimeout(clearSlot, 200); });
 
+  initHoverTip();
   // 右のタスク欄のオン・オフ
   $('#btn-tasks').onclick = () => { store.set('tasksSide', !sideTasks()); render(); };
 
