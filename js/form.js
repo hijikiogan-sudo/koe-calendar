@@ -449,7 +449,7 @@ function openConfirm(text, slot, raw) {
   }
   if (slot) {
     if (!p.dateSaid) p.date = slot.date;
-    if (p.allDay && slot.start != null) { p.allDay = false; p.start = slot.start; p.end = slot.start + 60; p.kind = 'event'; }
+    if (p.allDay && slot.start != null) { p.allDay = false; p.start = slot.start; p.end = slot.end != null ? slot.end : slot.start + 60; p.kind = 'event'; }
   }
   openForm({
     kind: p.kind, calId: p.calId, title: p.title, date: p.date, noDue: p.kind === 'task' && !p.dateSaid && !slot,

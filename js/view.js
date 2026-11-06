@@ -123,6 +123,7 @@ function renderTimeGrid(n) {
       const start = Math.min(Math.max(Math.floor(y / HOUR * 2) / 2, 0), 23.5) * 60;
       startSlot({ date: d, start }, col, start / 60 * HOUR);
     });
+    attachDragCreate(col, d, root);
     body.appendChild(col);
   });
   scroll.appendChild(body);
@@ -242,13 +243,68 @@ function renderWeekList() {
 }
 
 // 予定を長押しして、別の時間や別の日へ動かす（離すと確認画面が出る。勝手には変えない）
+// マウスで空いた時間をなぞる → その時間で確認画面を開く（15分単位）
+function attachDragCreate(col, d, root) {
+  col.addEventListener('mousedown', (e) => {
+    if (e.button || !MOUSE.matches || e.target.closest('.ev')) return;
+    const toMin = (y) => Math.min(Math.max(Math.round((y - col.getBoundingClientRect().top) / HOUR * 4) * 15, 0), 1425);
+    const sx = e.clientX, sy = e.clientY, a = toMin(sy);
+    let mark = null, lastY = sy, s = a, en = a + 15, auto = null;
+    const draw = () => {
+      const b = toMin(lastY);
+      s = Math.min(a, b); en = Math.min(Math.max(Math.max(a, b), s + 15), 1425);
+      if (s === en) s = en - 15;
+      mark.style.top = `${s / 60 * HOUR}px`;
+      mark.style.height = `${(en - s) / 60 * HOUR - 2}px`;
+      mark.textContent = `${minToHM(s)}〜${minToHM(en)}`;
+    };
+    const autoScroll = () => { // 上下の端に近づいたらスクロールする
+      const sc = root.querySelector('.tg-scroll'), r = sc.getBoundingClientRect();
+      if (lastY < r.top + 36) sc.scrollTop -= 8; else if (lastY > r.bottom - 36) sc.scrollTop += 8;
+      draw();
+      auto = requestAnimationFrame(autoScroll);
+    };
+    const stop = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('keydown', onKey, true);
+      cancelAnimationFrame(auto);
+      document.body.classList.remove('is-picking');
+      if (mark) mark.remove();
+    };
+    const onMove = (ev) => {
+      lastY = ev.clientY;
+      if (mark) { draw(); return; }
+      if (Math.hypot(ev.clientX - sx, ev.clientY - sy) <= 10) return;
+      if (!$('#voice').hidden || !$('#sheet').hidden) { stop(); return; } // 長押しで声の入力が始まっている
+      document.querySelectorAll('.slot-mark').forEach((m) => m.remove());
+      mark = el('div', 'slot-mark');
+      col.appendChild(mark);
+      document.body.classList.add('is-picking');
+      draw();
+      auto = requestAnimationFrame(autoScroll);
+    };
+    const onUp = () => {
+      const picked = !!mark;
+      stop();
+      if (!picked) return;
+      openConfirm('', { date: d, start: s, end: en }, true);
+      setTimeout(() => { const t = $('#c-title'); if (t) t.focus(); }, 0); // すぐ内容を打てるように
+    };
+    const onKey = (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); mark = null; stop(); document.querySelectorAll('.slot-mark').forEach((m) => m.remove()); } };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    document.addEventListener('keydown', onKey, true);
+  });
+}
+
 function attachEventDrag(b, ev, root) {
   const cal = state.calendars.find((c) => c.id === ev.calId);
   const oneDay = sameDay(ev.start, new Date(ev.end.getTime() - 1));
   if (!cal || !cal.writable || !oneDay) return;
   const dur = Math.round((ev.end - ev.start) / 60000);
   const start0 = ev.start.getHours() * 60 + ev.start.getMinutes();
-  let timer = null, drag = null, sx = 0, sy = 0, grab = 0, autoT = null, lastPt = null, resizing = false, newDur = dur;
+  let timer = null, drag = null, sx = 0, sy = 0, grab = 0, autoT = null, lastPt = null, resizing = false, newDur = dur, armed = false, cancelledByKey = false;
   const scroller = () => root.querySelector('.tg-scroll');
   const cols = () => [...root.querySelectorAll('.dcol')];
   const place = (pt) => {
@@ -296,10 +352,12 @@ function attachEventDrag(b, ev, root) {
     place(pt);
     autoT = requestAnimationFrame(autoScroll);
   };
+  const onEscKey = (e) => { if (e.key === 'Escape' && drag) { e.stopPropagation(); cancelledByKey = true; finish(true); } };
   const finish = (cancelled) => {
-    clearTimeout(timer); timer = null;
+    clearTimeout(timer); timer = null; armed = false;
     document.removeEventListener('touchmove', onTouchMove);
     document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('keydown', onEscKey, true);
     if (!drag) return;
     cancelAnimationFrame(autoT);
     const { col, start, ghost } = drag;
@@ -322,7 +380,10 @@ function attachEventDrag(b, ev, root) {
     if (drag) { e.preventDefault(); place({ x: t.clientX, y: t.clientY }); }
   };
   const onMouseMove = (e) => {
-    if (timer) { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 10) finish(true); return; }
+    if (armed) { // マウスは少し動かしたらすぐ掴む
+      if (Math.hypot(e.clientX - sx, e.clientY - sy) > 6) { armed = false; begin({ x: e.clientX, y: e.clientY }); }
+      return;
+    }
     if (drag) place({ x: e.clientX, y: e.clientY });
   };
   b.addEventListener('touchstart', (e) => {
@@ -337,9 +398,11 @@ function attachEventDrag(b, ev, root) {
     if (e.button) return;
     sx = e.clientX; sy = e.clientY;
     resizing = !!e.target.closest('.ev-grip');
+    armed = true;
     document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', () => finish(false), { once: true });
-    timer = setTimeout(() => begin({ x: sx, y: sy }), resizing ? 200 : 450);
+    document.addEventListener('keydown', onEscKey, true);
+    document.addEventListener('mouseup', () => finish(cancelledByKey), { once: true });
+    cancelledByKey = false;
   });
   b.addEventListener('contextmenu', (e) => e.preventDefault());
 }

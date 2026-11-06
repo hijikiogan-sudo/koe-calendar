@@ -29,6 +29,8 @@ const THEMES = [
   { id: 'gold', name: 'ネイビー×ゴールド', sw: ['#1b2a4a', '#c9a85c', '#f8f6f0'] },
 ];
 const DEFAULT_THEME = 'techo-camel';
+const KEY_HELP = [['N', '入力欄へ'], ['T', '今日に戻る'], ['1 〜 4', '今日・日・週・月'], ['← →', '前へ・次へ'], ['/', '検索'], ['Enter', '入力した内容を確認へ'], ['Shift+Enter', '入力欄で改行'], ['Esc', '閉じる・やめる'], ['?', 'この一覧']]
+  .map(([k, t]) => `<div class="row"><span><kbd>${k}</kbd></span><span>${t}</span></div>`).join('');
 const MODES = [{ id: 'auto', name: '自動' }, { id: 'light', name: 'ライト' }, { id: 'dark', name: 'ダーク' }];
 const darkMQ = window.matchMedia('(prefers-color-scheme: dark)');
 function applyTheme() {
@@ -188,6 +190,7 @@ function openMenu() {
         <button>追加</button>
       </form>
       <p class="note" style="margin-top:6px">iPhoneは「たかし」を「隆」などの漢字で書き起こします。確認画面に出た字を登録してください。「、」で区切ると複数まとめて登録できます。Google ToDoの「Koe設定」リストを使って、iPhoneとパソコンで共有します。</p>`)}
+    ${MOUSE.matches ? group('keys', 'キーボード操作', KEY_HELP) : ''}
     ${group('sync', '同期とアカウント', `
       <p class="note" style="margin-top:0">${state.demo ? 'お試し表示中です。' : state.token ? 'Googleに接続中です。開いたときと、アプリに戻ったときに自動で更新します。' : 'Googleとの接続が切れています。'}</p>
       <p class="note" style="margin-top:4px">もしかしての候補：<span id="m-corpus"></span></p>

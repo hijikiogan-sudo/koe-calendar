@@ -176,12 +176,20 @@ function bind() {
     if (e.isComposing) return;
     if (e.key === 'Escape') {
       if (document.querySelector('.daypop')) closeDayPop();
-      else { closeVoice(); closeSheet(); }
+      else if (!$('#sheet').hidden || !$('#voice').hidden) { closeVoice(); closeSheet(); }
+      else if (e.target === $('#intext')) e.target.blur();
       return;
     }
-    if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.target.closest('input,textarea,select,[contenteditable]') || !$('#sheet').hidden || !$('#voice').hidden) return;
-    $(e.key === 'ArrowLeft' ? '#btn-prev' : '#btn-next').click();
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target.closest('input,textarea,select,[contenteditable]') || !$('#sheet').hidden || !$('#voice').hidden || !$('#login').hidden || document.querySelector('.daypop')) return;
+    const views = { 1: 'today', 2: 'day', 3: 'week', 4: 'month' };
+    if (e.key === 'ArrowLeft') $('#btn-prev').click();
+    else if (e.key === 'ArrowRight') $('#btn-next').click();
+    else if (views[e.key]) setView(views[e.key]);
+    else if (e.key === 't' || e.key === 'T') $('#btn-today').click();
+    else if (e.key === 'n' || e.key === 'N') { e.preventDefault(); $('#intext').focus(); }
+    else if (e.key === '/') { e.preventDefault(); openSearch(); }
+    else if (e.key === '?') openSheet(`<h2>キーボード操作</h2>${KEY_HELP}<button class="act" id="keys-close">閉じる</button>`), $('#keys-close').onclick = closeSheet;
   });
   // 窓の幅が変わったら、広い画面と狭い画面を切り替える
   WIDE.addEventListener('change', () => { closeDayPop(); render(); });

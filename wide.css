@@ -59,7 +59,13 @@
 
 /* マウスのとき：押せる場所を分かるようにする */
 @media (hover:hover) and (pointer:fine){
-  button:not(:disabled),.mc,.ev{cursor:pointer}
+  button:not(:disabled),.mc{cursor:pointer}
+  .ev{cursor:grab}
+  .ev-grip{cursor:ns-resize}
+  .dcol{cursor:crosshair}
+  body.is-dragging,body.is-dragging *{cursor:grabbing!important}
+  body.is-picking,body.is-picking *{cursor:crosshair!important}
+  body.is-picking .slot-mark{pointer-events:none;font-weight:700}
   .tg-scroll,.td,.tk-list,.dp-list,.sheet{scrollbar-width:thin;scrollbar-color:var(--line) transparent}
   .icon-btn:hover,.today-btn:hover{background:var(--soft)}
   .seg button:not(.on):hover{color:var(--fg)}
@@ -69,3 +75,5 @@
   .ev:hover,.chip:hover{filter:brightness(1.08)}
   .wl-ev:hover,.tk-list li:hover,.td-task:hover{background-color:var(--soft)}
 }
+
+kbd{font:inherit;font-size:12px;font-weight:700;padding:1px 7px;border-radius:5px;background:var(--soft);border:1px solid var(--line);white-space:nowrap}
