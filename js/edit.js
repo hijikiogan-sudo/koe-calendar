@@ -37,6 +37,7 @@ function openMemo(date, initial) {
   };
 }
 async function saveMemo(date, text, cur) {
+  if (state.local) { await saveLocalMemo(date, text); return; }
   const summary = `${MEMO_MARK} ${text.split('\n')[0].slice(0, 20)}`;
   if (state.demo) {
     state.demoDiary = state.demoDiary || new Map();
@@ -52,6 +53,7 @@ async function saveMemo(date, text, cur) {
   });
 }
 async function deleteMemo(cur) {
+  if (state.local) { await deleteLocalMemo(cur.start); return; }
   if (state.demo) { state.demoDiary.delete(ymd(cur.start)); return; }
   await api(`/calendars/${encodeURIComponent(cur.calId)}/events/${encodeURIComponent(cur.id)}`, 'DELETE');
 }
@@ -70,6 +72,7 @@ async function eventsBetween(a, b) {
   if (state.demo) return demoEvents().filter(hit);
   const [rs, re] = range();
   if (a >= rs && b <= re) return state.events.filter(hit);
+  if (state.local) return localBetween(a, b);
   if (!state.token) return [];
   try {
     const cals = state.calendars.filter((c) => !isHolidayCal(c) && !state.hidden.has(c.id));
@@ -97,6 +100,7 @@ function eventToForm(ev) {
 // 変更する（指示があればその項目だけ差し替えて確認画面へ）
 function openEdit(ev, text, scope = 'this', moved, master) {
   const locked = scope !== 'this'; // 全体やこの日以降は、日付を動かさない（繰り返しの規則とずれるため）
+  if (state.local && locked && ev.masterId && !master) master = localMaster(ev);
   // 全体やこの日以降は、今の繰り返しの規則を読んでから開く
   if (locked && ev.masterId && !master && !state.demo) {
     api(`/calendars/${encodeURIComponent(ev.calId)}/events/${encodeURIComponent(ev.masterId)}`)
@@ -175,6 +179,7 @@ function eventBody(v) {
 
 // 登録して、取り消す処理を返す
 async function insertEvent(v) {
+  if (state.local) return insertLocal(v);
   const { body, startDate, endDate } = eventBody(v);
   if (state.apple) return insertApple(v, body, startDate, endDate);
   if (state.demo) {
@@ -191,6 +196,7 @@ async function insertEvent(v) {
 }
 
 async function updateEvent(ev, v, scope = 'this') {
+  if (state.local) { await updateLocal(ev, v, scope); return; }
   const { body, startDate, endDate } = eventBody(scope === 'this' ? { ...v, recur: null } : v);
   delete body.recurrence; // 繰り返しの規則は下で範囲ごとに扱う
   if (state.apple) { await updateApple(ev, v, body, startDate, endDate, scope); return; }
@@ -257,6 +263,7 @@ function isFirstOf(ev, master) {
 
 // 削除して、元に戻す処理を返す
 async function deleteEvent(ev, scope = 'this') {
+  if (state.local) return deleteLocal(ev, scope);
   if (state.apple) return deleteApple(ev, scope);
   const path = (id) => `/calendars/${encodeURIComponent(ev.calId)}/events/${encodeURIComponent(id)}`;
   if (state.demo) {

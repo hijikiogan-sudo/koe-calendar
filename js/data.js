@@ -13,6 +13,7 @@ async function load() {
     state.holidays = new Map([[`${new Date().getFullYear()}-11-03`, '文化の日']]);
     render(); return;
   }
+  if (state.local) { loadLocal(s, e); return; }
   if (state.apple) { await loadApple(id, s, e); return; }
   if (!state.token) { loadCached(); return; } // 接続が切れている間は保存済みを表示
   $('#view').classList.add('loading');
@@ -117,7 +118,7 @@ function htmlToText(html) {
 }
 
 async function api(path, method = 'GET', body, retried) {
-  if (state.apple) throw new Error('Appleカレンダーの表示中はGoogleと通信しません');
+  if (state.offGoogle) throw new Error('この表示ではGoogleと通信しません');
   await ensureFreshToken();
   const opt = { method, headers: { Authorization: `Bearer ${state.token}` } };
   if (body) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }

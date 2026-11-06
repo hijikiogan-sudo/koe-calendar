@@ -94,6 +94,7 @@ async function searchEvents(word) {
     const w = word.toLowerCase();
     return demoEvents().filter((e) => (e.title + e.location).toLowerCase().includes(w));
   }
+  if (state.local) return searchLocal(word);
   if (state.apple) return searchApple(word);
   if (!state.token) throw new Error('offline');
   const now = new Date();

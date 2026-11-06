@@ -14,6 +14,7 @@ class KoeBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(KoeAuthPlugin())
         bridge?.registerPluginInstance(KoeSpeechPlugin())
         bridge?.registerPluginInstance(KoeCalendarPlugin())
+        bridge?.registerPluginInstance(KoeLocalPlugin())
         // Macで動くときは、iPad向けの画面が77%に縮小されるので、その分を拡大して元の大きさに戻す
         if ProcessInfo.processInfo.isiOSAppOnMac {
             let source = "document.querySelector('meta[name=viewport]').setAttribute('content','initial-scale=1.3,minimum-scale=1.3,maximum-scale=1.3,viewport-fit=cover')"
@@ -607,5 +608,92 @@ public class KoeCalendarPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let color, let rgb = color.converted(to: CGColorSpaceCreateDeviceRGB(), intent: .defaultIntent, options: nil),
               let c = rgb.components, c.count >= 3 else { return "#2f5d8a" }
         return String(format: "#%02x%02x%02x", Int(c[0] * 255), Int(c[1] * 255), Int(c[2] * 255))
+    }
+}
+
+// MARK: - Koeの中だけの保存（端末の中のファイル。端末のバックアップにも含まれる）
+
+@objc(KoeLocalPlugin)
+public class KoeLocalPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "KoeLocalPlugin"
+    public let jsName = "KoeLocal"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "read", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "write", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "backups", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "share", returnType: CAPPluginReturnPromise),
+    ]
+    private let keepDays = 7
+
+    private func folder() throws -> URL {
+        let url = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            .appendingPathComponent("KoeLocal", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    private func backupNames() throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: folder().path)
+            .filter { $0.hasPrefix("backup-") && $0.hasSuffix(".json") }.sorted().reversed()
+    }
+
+    /// name を渡すと、その控えを読む
+    @objc func read(_ call: CAPPluginCall) {
+        do {
+            let name = call.getString("name") ?? "local.json"
+            let known = try backupNames()
+            guard name == "local.json" || known.contains(name) else { call.reject("控えが見つかりません"); return }
+            let url = try folder().appendingPathComponent(name)
+            guard FileManager.default.fileExists(atPath: url.path) else { call.resolve([:]); return }
+            call.resolve(["text": try String(contentsOf: url, encoding: .utf8)])
+        } catch {
+            call.reject("読み込めませんでした：\(error.localizedDescription)")
+        }
+    }
+
+    /// 書く前に、その日の最初の内容を控えに残す（7日分）。途中で切れても壊れないよう一度に置き換える
+    @objc func write(_ call: CAPPluginCall) {
+        guard let text = call.getString("text"), !text.isEmpty else { call.reject("書き込む内容がありません"); return }
+        do {
+            let dir = try folder()
+            let main = dir.appendingPathComponent("local.json")
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = "yyyy-MM-dd"
+            let today = dir.appendingPathComponent("backup-\(f.string(from: Date())).json")
+            if FileManager.default.fileExists(atPath: main.path), !FileManager.default.fileExists(atPath: today.path) {
+                try FileManager.default.copyItem(at: main, to: today)
+            }
+            for old in try backupNames().dropFirst(keepDays) { try? FileManager.default.removeItem(at: dir.appendingPathComponent(old)) }
+            try text.write(to: main, atomically: true, encoding: .utf8)
+            call.resolve()
+        } catch {
+            call.reject("保存できませんでした：\(error.localizedDescription)")
+        }
+    }
+
+    @objc func backups(_ call: CAPPluginCall) {
+        do { call.resolve(["backups": try backupNames()]) } catch { call.reject("控えを読めませんでした") }
+    }
+
+    /// 共有の画面から、好きな場所へファイルとして渡す
+    @objc func share(_ call: CAPPluginCall) {
+        guard let name = call.getString("name"), let text = call.getString("text"), !name.contains("/") else { call.reject("書き出せませんでした"); return }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        do { try text.write(to: url, atomically: true, encoding: .utf8) } catch { call.reject("書き出せませんでした"); return }
+        DispatchQueue.main.async { [weak self] in
+            guard let vc = self?.bridge?.viewController else { call.reject("書き出せませんでした"); return }
+            let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+            if let pop = sheet.popoverPresentationController {
+                pop.sourceView = vc.view
+                pop.sourceRect = CGRect(x: vc.view.bounds.midX, y: vc.view.bounds.midY, width: 1, height: 1)
+                pop.permittedArrowDirections = []
+            }
+            sheet.completionWithItemsHandler = { _, _, _, _ in
+                try? FileManager.default.removeItem(at: url)
+                call.resolve()
+            }
+            vc.present(sheet, animated: true)
+        }
     }
 }

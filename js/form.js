@@ -93,7 +93,7 @@ function openForm(v, opt) {
     <label class="f ev-only${ch('location')}"><span class="fl">場所</span><input id="c-loc" value="${esc(v.location || '')}" placeholder="なし"></label>
     <div class="sugg ev-only" id="s-loc" hidden></div>
     ${opt.quick ? '<div class="sugg ev-only" id="s-lquick" hidden></div>' : ''}
-    <label class="f ev-only${ch('remind')}"><span class="fl">通知</span><select id="c-remind">${reminds.map((r) =>
+    <label class="f ev-only${ch('remind')}"${state.local ? ' style="display:none"' : ''}><span class="fl">通知</span><select id="c-remind">${reminds.map((r) =>
       `<option value="${r.v}" ${r.v === (v.remind || '') ? 'selected' : ''}>${r.label}</option>`).join('')}</select></label>
     <button class="ok" id="c-ok">${opt.okLabel || 'OK'}</button>
     <button class="act" id="c-cancel">やめる</button>`);
@@ -103,7 +103,7 @@ function openForm(v, opt) {
     kind = k;
     sh.classList.toggle('as-task', k === 'task');
     sh.querySelectorAll('.kind-seg button').forEach((b) => b.classList.toggle('on', b.dataset.k === k));
-    $('#c-kind-note').textContent = k === 'task' ? (state.apple ? 'Appleのリマインダーに入ります' : 'Google ToDoリストに入ります') : state.apple ? 'Appleカレンダーに入ります' : 'Googleカレンダーに入ります';
+    $('#c-kind-note').textContent = state.local ? 'Koeの中に保存します' : k === 'task' ? (state.apple ? 'Appleのリマインダーに入ります' : 'Google ToDoリストに入ります') : state.apple ? 'Appleカレンダーに入ります' : 'Googleカレンダーに入ります';
     $('#c-date-l').textContent = k === 'task' ? '期限' : '日付';
     $('#c-date').disabled = k === 'task' && $('#c-nodue').checked;
   };
@@ -442,7 +442,8 @@ function openConfirm(text, slot, raw) {
   if (!cals.length) { toast(noWriteMsg()); return; }
   const p = window.KoeParse.parse(text, pOpts({ calendars: cals }));
   if (!p.calSaid && cals.some((c) => c.id === cfg('defCal', ''))) p.calId = cfg('defCal', '');
-  if (state.apple && !p.calSaid && cals.some((c) => c.id === store.get('appleCal', ''))) p.calId = store.get('appleCal', ''); // 前回選んだカレンダー
+  const lastCal = state.local ? 'localCal' : 'appleCal';
+  if (state.offGoogle && !p.calSaid && cals.some((c) => c.id === store.get(lastCal, ''))) p.calId = store.get(lastCal, ''); // 前回選んだカレンダー
   if (p.kind === 'task' && !p.taskWord && cfg('noTimeKind', 'task') === 'event') p.kind = 'event'; // 時刻のない文の扱い
   p.title = applyDictField(p.title); p.location = applyDictField(p.location);
   // 過去に予定として使った言葉（に近いもの）は、時刻がなくても終日の予定にする
@@ -467,7 +468,7 @@ function openConfirm(text, slot, raw) {
     onFixed: (title, location) => { p.title = title; p.location = location; }, // 直した後を基準に、案内の重複を防ぐ
     onOk: async (v) => {
       const undo = v.kind === 'task' ? await insertTask(v) : await insertEvent(v);
-      if (state.apple && v.kind !== 'task') store.set('appleCal', v.calId);
+      if (state.offGoogle && v.kind !== 'task') store.set(lastCal, v.calId);
       noteCorpus(v);
       setInText('');
       showUndo(`${v.kind === 'task' ? 'タスクを' : ''}登録しました：${v.title}${hiddenNote(v)}`, async () => { await undo(); load(); });

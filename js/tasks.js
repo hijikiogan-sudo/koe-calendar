@@ -42,6 +42,7 @@ async function fetchTasks() {
 const dueStr = (d) => `${ymd(d)}T00:00:00.000Z`;
 const taskPath = (t) => `${TASKS_API}/lists/${encodeURIComponent(t.listId || '@default')}/tasks/${encodeURIComponent(t.id)}`;
 async function insertTask(v) {
+  if (state.local) return insertLocalTask(v);
   if (state.apple) return insertAppleTask(v);
   const listId = v.listId || (state.taskLists[0] && state.taskLists[0].id) || '@default';
   if (state.demo) {
@@ -56,26 +57,31 @@ async function insertTask(v) {
   return () => api(taskPath({ listId, id: created.id }), 'DELETE');
 }
 async function updateTask(t, v) {
+  if (state.local) return updateLocalTask(t, v);
   if (state.apple) return updateAppleTask(t, v);
   if (state.demo) { Object.assign(demoTaskList().find((x) => x.id === t.id), { title: v.title, due: v.noDue ? null : v.date }); return; }
   await api(taskPath(t), 'PATCH', { title: v.title, due: v.noDue ? null : dueStr(v.date) });
 }
 async function completeTask(t) {
+  if (state.local) return setLocalTaskDone(t, true);
   if (state.apple) return setAppleTaskDone(t, true);
   if (state.demo) { demoTasks = demoTaskList().filter((x) => x.id !== t.id); return; }
   await api(taskPath(t), 'PATCH', { status: 'completed' });
 }
 async function uncompleteTask(t) {
+  if (state.local) return setLocalTaskDone(t, false);
   if (state.apple) return setAppleTaskDone(t, false);
   if (state.demo) { demoTasks = demoTaskList().concat(t); return; }
   await api(taskPath(t), 'PATCH', { status: 'needsAction', completed: null });
 }
 async function deleteTask(t) {
+  if (state.local) return deleteLocalTask(t);
   if (state.apple) return deleteAppleTask(t);
   if (state.demo) { demoTasks = demoTaskList().filter((x) => x.id !== t.id); return; }
   await api(taskPath(t), 'DELETE');
 }
 async function undeleteTask(t) {
+  if (state.local) return undeleteLocalTask(t);
   if (state.apple) return undeleteAppleTask(t);
   if (state.demo) { demoTasks = demoTaskList().concat(t); return; }
   await api(taskPath(t), 'PATCH', { deleted: false });
@@ -104,7 +110,7 @@ function renderTasks() {
   btn.classList.toggle('on', side);
   btn.title = side ? 'タスク欄を隠す' : 'タスク欄を表示';
   if (WIDE.matches && !side) { box.hidden = true; return; }
-  if (!state.token && !state.demo && !state.appleTasks && !state.tasks.length) { box.hidden = true; return; }
+  if (!state.token && !state.demo && !state.appleTasks && !state.local && !state.tasks.length) { box.hidden = true; return; }
   box.hidden = false;
   if (state.view === 'today' && !side && (state.demo || state.tasksOk || !state.token)) { box.hidden = true; return; } // 今日の画面の中に出している
   if (state.token && !state.demo && !state.tasksOk) {

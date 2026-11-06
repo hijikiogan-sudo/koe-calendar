@@ -6,7 +6,8 @@ function render() {
   closeDayPop();
   hideTip();
   $('#title').innerHTML = titleHTML();
-  $('#demo-banner').hidden = !state.demo && !state.apple;
+  $('#demo-banner').hidden = !state.demo && !state.offGoogle;
+  if (state.local) $('#demo-banner').textContent = 'Koeの中だけに保存中（試作）';
   if (state.apple) $('#demo-banner').textContent = 'Appleカレンダーを表示中（試作）';
   $('#btn-show').classList.toggle('on', state.calendars.some((c) => state.hidden.has(c.id)) || state.taskLists.some((l) => state.hiddenLists.has(l.id)));
   renderConn();

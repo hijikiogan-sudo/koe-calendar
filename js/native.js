@@ -100,7 +100,7 @@ function textOn(hex) {
 }
 
 async function startApple() {
-  state.apple = true;
+  state.apple = true; state.offGoogle = true;
   state.hidden = new Set(); state.hiddenLists = new Set(); // Googleの表示の設定は使わず、書き換えもしない
   try {
     const { calendars } = await KoeCalendar.calendars();
