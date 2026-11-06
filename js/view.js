@@ -14,7 +14,7 @@ function render() {
   if (keepScroll) state.scrollTop = keepScroll.scrollTop;
   v.innerHTML = '';
   renderTasks();
-  if (state.view === 'month') { v.appendChild(renderMonth()); return; }
+  if (state.view === 'month') { v.appendChild(renderMonth()); monthFill(); return; }
   if (state.view === 'today') { v.appendChild(renderToday()); return; }
   if (state.view === 'day') v.appendChild(memoBar(state.anchor));
   if (state.view === 'week' && cfg('weekStyle', 'grid') === 'list') { v.appendChild(renderWeekList()); return; }
@@ -439,6 +439,7 @@ function renderMonth() {
   }
   root.appendChild(head);
   const body = el('div', 'mg-body');
+  const fills = [];
   for (let i = 0; i < 42; i++) {
     const d = addDays(s, i);
     const cell = el('button', 'mc' + (d.getDay() === 0 ? ' sun' : d.getDay() === 6 ? ' sat' : '') + (d.getMonth() !== m ? ' out' : '') + (sameDay(d, today) ? ' today' : '') + (state.holidays.has(ymd(d)) ? ' holiday' : ''));
@@ -447,27 +448,48 @@ function renderMonth() {
     if (cfg('rokuyo', false) && window.KoeRokuyo) cell.appendChild(Object.assign(el('span', 'rk'), { textContent: window.KoeRokuyo.rokuyo(d) }));
     const evs = eventsOn(d).sort((a, b) => (b.allDay - a.allDay) || (a.start - b.start))
       .concat(state.tasks.filter((t) => t.due && sameDay(t.due, d)).map((t) => ({ task: true, title: t.title })));
-    const lineH = { small: 18, normal: 21, large: 24 }[cfg('textSize', 'normal')] || 21;
-    const max = WIDE.matches ? Math.max(cfg('monthMax', 3), Math.floor(((window.innerHeight - 170) / 6 - 28) / lineH)) : cfg('monthMax', 3);
-    evs.slice(0, evs.length > max ? max - 1 : max).forEach((ev) => {
-      const x = el('div', 'm-ev ' + (ev.task ? 'task' : ev.allDay ? 'allday' : 'timed'));
-      if (!ev.task) { x.style.setProperty('--c', ev.color); x.style.setProperty('--ct', ev.text || '#fff'); }
-      x.textContent = ev.title;
-      setTip(x, ev);
-      cell.appendChild(x);
-      if (!ev.task) attachMonthDrag(x, ev, d, cell, body, s);
-    });
-    if (evs.length > max) {
-      const more = Object.assign(el('div', 'more'), { textContent: `ほか${evs.length - (max - 1)}件` });
-      setTip(more, { list: evs.slice(max - 1) });
-      cell.appendChild(more);
-    }
+    fills.push(() => fillMonthCell(cell, evs, d, body, s));
     cell.onclick = () => openDayPop(d, cell); // その日の予定を吹き出しで出す
     attachLongPress(cell, () => startSlot({ date: d, start: null }, null)); // 月表示は日付だけ
     body.appendChild(cell);
   }
   root.appendChild(body);
+  monthFill = () => { fills.forEach((f) => f()); monthFillH = body.clientHeight; };
+  // 下の欄の開閉や窓の大きさで高さが変わったら、入る行数を計算し直す
+  if (monthWatch) monthWatch.disconnect();
+  monthWatch = new ResizeObserver(() => { if (body.isConnected && body.clientHeight !== monthFillH) monthFill(); });
+  monthWatch.observe(body);
   return root;
+}
+
+let monthFill = null, monthFillH = 0, monthWatch = null;
+// 1マスに、切れずに入る行だけを出す。入らない分は「ほか○件」にまとめる
+function fillMonthCell(cell, evs, d, body, s) {
+  cell.querySelectorAll('.m-ev,.more').forEach((x) => x.remove());
+  const lineH = { small: 18, normal: 21, large: 24 }[cfg('textSize', 'normal')] || 21;
+  const max = WIDE.matches ? Math.max(cfg('monthMax', 3), Math.floor(((window.innerHeight - 170) / 6 - 28) / lineH)) : cfg('monthMax', 3);
+  const lines = evs.slice(0, evs.length > max ? max - 1 : max).map((ev) => {
+    const x = el('div', 'm-ev ' + (ev.task ? 'task' : ev.allDay ? 'allday' : 'timed'));
+    if (!ev.task) { x.style.setProperty('--c', ev.color); x.style.setProperty('--ct', ev.text || '#fff'); }
+    x.textContent = ev.title;
+    setTip(x, ev);
+    cell.appendChild(x);
+    if (!ev.task) attachMonthDrag(x, ev, d, cell, body, s);
+    return x;
+  });
+  const more = el('div', 'more');
+  const showMore = () => {
+    more.textContent = `ほか${evs.length - lines.length}件`;
+    setTip(more, { list: evs.slice(lines.length) });
+    cell.appendChild(more);
+  };
+  if (lines.length < evs.length) showMore();
+  const bottom = cell.getBoundingClientRect().bottom - 1;
+  const over = () => cell.lastElementChild.getBoundingClientRect().bottom > bottom;
+  if (lines.length && over()) {
+    if (!more.isConnected) showMore(); // 「ほか」の行の分も空ける
+    while (lines.length && over()) { lines.pop().remove(); showMore(); }
+  }
 }
 
 // 月表示：マウスで予定を別の日へ動かす（離すと確認画面が出る。勝手には変えない）

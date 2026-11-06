@@ -226,6 +226,7 @@ function onResume() {
   lastActive = Date.now();
   if (busy) return; // 入力中は邪魔しない
   checkNewVersion();
+  if (state.local) localNotifySync(false);
   const saved = store.get('token', null);
   if (!NATIVE && state.token && saved && saved.exp <= Date.now()) { connectionLost(); return; }
   load();
@@ -248,6 +249,8 @@ bind();
 render();
 const forceDemo = new URLSearchParams(location.search).has('demo');
 if (NATIVE) prepareNativeLogin();
+// Koeだけの使い方をやめたら、見られなくなった予定の通知を鳴らさない
+if (NATIVE && !isLocalView()) KoeLocal.notifySchedule({ items: [] }).catch(() => {});
 if (forceDemo || !cfgClientId()) {
   startDemo();
 } else if (isLocalView()) {

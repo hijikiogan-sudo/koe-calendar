@@ -24,6 +24,7 @@ function localClean(x) {
     title: e.title, location: str(e.location), description: str(e.description), date: e.date, allDay: !!e.allDay,
     start: Number(e.start) || 0, end: Number(e.end) || 0, endDays: Number(e.endDays) || 0, spanDays: Number(e.spanDays) || 1,
     recur: localRule(e.recur), ex: Array.isArray(e.ex) ? e.ex.filter(isDay) : [],
+    remind: typeof e.remind === 'number' && e.remind >= 0 ? e.remind : null,
   }));
   const tasks = x.tasks.filter((t) => t && t.id && typeof t.title === 'string').map((t) => ({
     id: String(t.id), listId: lists.some((l) => l.id === t.listId) ? t.listId : lists[0].id, title: t.title,
@@ -73,6 +74,7 @@ function localCommit(change) {
     change(next);
     await KoeLocal.write({ text: JSON.stringify(next) });
     localDb = next;
+    localNotifySync(true);
     return () => localCommit((d) => { Object.assign(d, JSON.parse(before)); });
   };
   const p = localChain.then(run, run);
@@ -135,6 +137,7 @@ function localOccurrence(rec, d) {
     diary: false, id: rec.recur ? `${rec.id}|${ymd(d)}` : rec.id, recId: rec.id, occ: ymd(d), calId: rec.calId, title: rec.title,
     location: rec.location, description: rec.description, allDay: rec.allDay, start: startDate, end: endDate,
     color: cal.color, text: cal.text, recurring: !!rec.recur, masterId: rec.recur ? rec.id : null, transparent: false,
+    reminders: { useDefault: false, overrides: rec.remind != null ? [{ method: 'popup', minutes: rec.remind }] : [] },
   };
 }
 function localBetween(s, e) {
@@ -150,6 +153,41 @@ function localBetween(s, e) {
   return out;
 }
 const localMaster = (ev) => ({ recurrence: [window.KoeParse.recurRule(localDb.events.find((r) => r.id === ev.recId).recur, parseYMD(localDb.events.find((r) => r.id === ev.recId).date), ev.allDay)] });
+
+// ---------- 通知（端末に予約する）----------
+// 端末に予約できる数には上限があるので、近いものから入れ、開くたびに先の分を足す
+const NOTIFY_DAYS = 60, NOTIFY_MAX = 60;
+function localNotifyItems(now = Date.now()) {
+  const label = (ev) => {
+    const d = ev.start, day = `${d.getMonth() + 1}/${d.getDate()}（${'日月火水木金土'[d.getDay()]}）`;
+    const time = ev.allDay ? '' : ` ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+    return `${day}${time}${ev.location ? ` ${ev.location}` : ''}`;
+  };
+  const items = [];
+  localBetween(new Date(now), new Date(now + NOTIFY_DAYS * 86400000)).forEach((ev) => {
+    const min = ev.reminders.overrides[0] && ev.reminders.overrides[0].minutes;
+    if (min == null) return;
+    const at = ev.start.getTime() - min * 60000;
+    if (at > now + 1000 && ev.start.getTime() > now) items.push({ id: `${ev.recId}-${ev.occ}`, title: ev.title, body: label(ev), at });
+  });
+  return items.sort((a, b) => a.at - b.at).slice(0, NOTIFY_MAX);
+}
+let notifyChain = Promise.resolve(), notifyWarned = false;
+// ask：保存の直後だけ、必要なら許可を尋ねる
+function localNotifySync(ask) {
+  const run = async () => {
+    const items = localNotifyItems();
+    let { status } = await KoeLocal.notifyStatus();
+    if (status === 'undecided' && ask && items.length) ({ status } = await KoeLocal.notifyRequest());
+    if (status === 'allowed') { await KoeLocal.notifySchedule({ items }); return; }
+    if (status === 'denied' && ask && items.length && !notifyWarned) {
+      notifyWarned = true;
+      toast('通知が許可されていないため鳴りません。設定アプリで許可できます');
+    }
+  };
+  notifyChain = notifyChain.then(run, run).catch((err) => console.warn(err));
+  return notifyChain;
+}
 
 // ---------- 祝日（内閣府の決まりから計算する）----------
 const holidayCache = new Map();
@@ -186,6 +224,7 @@ async function startLocal() {
   state.calendars = applyCalColors(LOCAL_CALS.map((c) => ({ ...c })));
   try { await localOpen(); } catch (err) { console.warn(err); localDb = localEmpty(); localBroken = true; toast('保存データを読めませんでした'); }
   load();
+  if (!localBroken) localNotifySync(false);
 }
 function loadLocal(s, e) {
   state.events = localBetween(s, e).filter((ev) => !state.hidden.has(ev.calId));
@@ -212,8 +251,14 @@ function localRec(v, id, old) {
   return {
     id, calId: v.calId, title: v.title, location: v.location || '', description: v.description != null ? v.description : (old && old.description) || '',
     date: ymd(v.date), allDay: !!v.allDay, start: v.start, end: v.end, endDays: v.endDays || 0, spanDays: v.spanDays || 1,
-    recur: localRule(v.recur), ex: [],
+    recur: localRule(v.recur), ex: [], remind: localRemind(v, old),
   };
+}
+// 通知は「予定の何分前か」で持つ。「前の日」は、Googleと同じ分数にする
+function localRemind(v, old) {
+  if (v.remind === 'default') return old && old.remind != null ? old.remind : null;
+  if (v.remind === 'prevday') return v.allDay ? 15 * 60 : 24 * 60;
+  return v.remind ? Number(v.remind) : null;
 }
 const insertLocal = (v) => localCommit((d) => { d.events.push(localRec(v, localId())); });
 function updateLocal(ev, v, scope) {

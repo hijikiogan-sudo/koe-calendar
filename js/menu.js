@@ -234,7 +234,7 @@ function openMenu() {
       <p class="note" style="margin-top:6px">iPhoneは「たかし」を「隆」などの漢字で書き起こします。確認画面に出た字を登録してください。「、」で区切ると複数まとめて登録できます。Google ToDoの「Koe設定」リストを使って、iPhoneとパソコンで共有します。</p>`)}
     ${MOUSE.matches ? group('keys', 'キーボード操作', KEY_HELP) : ''}
     ${group('sync', '同期とアカウント', `
-      <p class="note" style="margin-top:0">${state.local ? 'Koeの中だけに保存しています。通知はまだ鳴りません。アプリを消すと中身も消えるので、ときどき書き出して、別の場所に置いてください。' : state.apple ? 'Appleカレンダーを使っています。ここでの登録・変更・削除はAppleカレンダーとリマインダーに入ります。' : state.demo ? 'お試し表示中です。' : state.token ? 'Googleに接続中です。開いたときと、アプリに戻ったときに自動で更新します。' : 'Googleとの接続が切れています。'}</p>
+      <p class="note" style="margin-top:0">${state.local ? 'Koeの中だけに保存しています。通知はこの端末で鳴ります。アプリを消すと中身も消えるので、ときどき書き出して、別の場所に置いてください。' : state.apple ? 'Appleカレンダーを使っています。ここでの登録・変更・削除はAppleカレンダーとリマインダーに入ります。' : state.demo ? 'お試し表示中です。' : state.token ? 'Googleに接続中です。開いたときと、アプリに戻ったときに自動で更新します。' : 'Googleとの接続が切れています。'}</p>
       <p class="note" style="margin-top:4px">もしかしての候補：<span id="m-corpus"></span></p>
       <button class="act" id="m-corpus-reload" style="margin-top:6px">今すぐ更新</button>
       ${state.local ? `

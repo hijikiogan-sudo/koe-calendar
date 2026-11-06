@@ -43,7 +43,7 @@ const noWriteMsg = () => '書き込めるカレンダーがありません';
 function openForm(v, opt) {
   const cals = writableCals();
   let reminds = REMINDS.slice();
-  if (opt.keepRemind) reminds.unshift({ v: 'default', label: opt.keepLabel || 'そのまま（カレンダーの設定）' });
+  if (opt.keepRemind && !state.local) reminds.unshift({ v: 'default', label: opt.keepLabel || 'そのまま（カレンダーの設定）' });
   if (v.remind != null && !reminds.some((r) => r.v === v.remind)) reminds.push({ v: v.remind, label: v.remindLabel || minLabel(Number(v.remind)) });
   const start = v.allDay || v.start == null ? 9 * 60 : v.start;
   const end = v.allDay || v.end == null ? 10 * 60 : v.end;
@@ -93,7 +93,7 @@ function openForm(v, opt) {
     <label class="f ev-only${ch('location')}"><span class="fl">場所</span><input id="c-loc" value="${esc(v.location || '')}" placeholder="なし"></label>
     <div class="sugg ev-only" id="s-loc" hidden></div>
     ${opt.quick ? '<div class="sugg ev-only" id="s-lquick" hidden></div>' : ''}
-    <label class="f ev-only${ch('remind')}"${state.local ? ' style="display:none"' : ''}><span class="fl">通知</span><select id="c-remind">${reminds.map((r) =>
+    <label class="f ev-only${ch('remind')}"><span class="fl">通知</span><select id="c-remind">${reminds.map((r) =>
       `<option value="${r.v}" ${r.v === (v.remind || '') ? 'selected' : ''}>${r.label}</option>`).join('')}</select></label>
     <button class="ok" id="c-ok">${opt.okLabel || 'OK'}</button>
     <button class="act" id="c-cancel">やめる</button>`);

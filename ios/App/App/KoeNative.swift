@@ -7,6 +7,7 @@ import CryptoKit
 import EventKit
 import Speech
 import UIKit
+import UserNotifications
 
 /// 画面の土台。Koe専用の機能をここで登録する
 class KoeBridgeViewController: CAPBridgeViewController {
@@ -15,6 +16,7 @@ class KoeBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(KoeSpeechPlugin())
         bridge?.registerPluginInstance(KoeCalendarPlugin())
         bridge?.registerPluginInstance(KoeLocalPlugin())
+        UNUserNotificationCenter.current().delegate = KoeNotifyPresenter.shared
         // Macで動くときは、iPad向けの画面が77%に縮小されるので、その分を拡大して元の大きさに戻す
         if ProcessInfo.processInfo.isiOSAppOnMac {
             let source = "document.querySelector('meta[name=viewport]').setAttribute('content','initial-scale=1.3,minimum-scale=1.3,maximum-scale=1.3,viewport-fit=cover')"
@@ -622,8 +624,65 @@ public class KoeLocalPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "write", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "backups", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "share", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "notifyStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "notifyRequest", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "notifySchedule", returnType: CAPPluginReturnPromise),
     ]
     private let keepDays = 7
+    private let notifyPrefix = "koe-local-"
+
+    private func notifyLabel(_ s: UNAuthorizationStatus) -> String {
+        switch s {
+        case .notDetermined: return "undecided"
+        case .denied: return "denied"
+        default: return "allowed"
+        }
+    }
+
+    @objc func notifyStatus(_ call: CAPPluginCall) {
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            center.getPendingNotificationRequests { pending in
+                call.resolve(["status": self.notifyLabel(settings.authorizationStatus),
+                              "pending": pending.filter { $0.identifier.hasPrefix(self.notifyPrefix) }.count])
+            }
+        }
+    }
+
+    @objc func notifyRequest(_ call: CAPPluginCall) {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in
+            center.getNotificationSettings { call.resolve(["status": self.notifyLabel($0.authorizationStatus)]) }
+        }
+    }
+
+    // いつも全部を入れ替える。消した予定や変えた時刻の通知が残らないようにする
+    @objc func notifySchedule(_ call: CAPPluginCall) {
+        let center = UNUserNotificationCenter.current()
+        let items = call.getArray("items") ?? []
+        center.getPendingNotificationRequests { pending in
+            center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier).filter { $0.hasPrefix(self.notifyPrefix) })
+            let group = DispatchGroup()
+            var added = 0
+            let lock = NSLock()
+            for case let item as JSObject in items {
+                guard let id = item["id"] as? String, let title = item["title"] as? String, let at = (item["at"] as? NSNumber)?.doubleValue else { continue }
+                let wait = at / 1000 - Date().timeIntervalSince1970
+                guard wait > 0 else { continue }
+                let content = UNMutableNotificationContent()
+                content.title = title
+                content.body = item["body"] as? String ?? ""
+                content.sound = .default
+                let trigger = UNTimeIntervalNotificationTrigger(timeInterval: wait, repeats: false)
+                group.enter()
+                center.add(UNNotificationRequest(identifier: self.notifyPrefix + id, content: content, trigger: trigger)) { err in
+                    if err == nil { lock.lock(); added += 1; lock.unlock() }
+                    group.leave()
+                }
+            }
+            group.notify(queue: .main) { call.resolve(["count": added]) }
+        }
+    }
 
     private func folder() throws -> URL {
         let url = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
@@ -695,5 +754,14 @@ public class KoeLocalPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             vc.present(sheet, animated: true)
         }
+    }
+}
+
+// Koeを開いている間に時間が来ても、通知を出す
+final class KoeNotifyPresenter: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = KoeNotifyPresenter()
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .list, .sound])
     }
 }
