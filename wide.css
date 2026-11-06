@@ -7,7 +7,7 @@
   html[data-book] #btn-tasks.on{background:rgba(0,0,0,.22)}
 
   /* 全体：上に見出し、左に手帳、右にタスク */
-  #app{display:grid;max-width:1600px;position:relative;
+  #app{display:grid;max-width:none;position:relative;
     grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto minmax(0,1fr) auto;
     grid-template-areas:"top top" "view tasks" "bottom tasks"}
   .top{grid-area:top;flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px 18px;padding-inline:16px}
@@ -33,14 +33,22 @@
   .dh{font-size:12px}
   .dh b{font-size:18px;width:32px;height:32px;line-height:32px}
   .hl{font-size:11px}
-  .chip{font-size:12.5px;padding:2px 6px}
-  .ev{font-size:13px;padding:3px 6px}
-  .ev .t{font-size:11.5px}
+  .chip{font-size:13px;padding:2px 6px}
+  .ev{font-size:13.5px;padding:3px 6px}
+  .ev .t{font-size:12px}
+  .tg.narrow .ev{font-size:13.5px;padding:3px 6px;white-space:normal}
+  .tg.narrow .ev > *{white-space:normal}
   .mg-head{font-size:13px}
   .mc{padding:3px 5px}
   .mc .num{font-size:14px;width:24px;height:24px;line-height:24px}
-  .mc .m-ev{font-size:12.5px;line-height:1.4;padding:0 4px;text-overflow:ellipsis}
-  .mc .more{font-size:11.5px}
+  .mc .m-ev{font-size:13px;line-height:1.4;padding:0 4px;text-overflow:ellipsis}
+  .mc .more{font-size:12px}
+
+  /* 設定の「予定の文字」（小・標準・大）を広い画面でも効かせる */
+  html[data-size=small] .ev,html[data-size=small] .tg.narrow .ev,html[data-size=small] .chip,html[data-size=small] .mc .m-ev{font-size:11.5px}
+  html[data-size=small] .ev .t,html[data-size=small] .mc .more{font-size:10.5px}
+  html[data-size=large] .ev,html[data-size=large] .tg.narrow .ev,html[data-size=large] .chip,html[data-size=large] .mc .m-ev{font-size:15.5px}
+  html[data-size=large] .ev .t,html[data-size=large] .mc .more{font-size:13.5px}
 
   /* 今日：読みやすい幅で真ん中に */
   .td{padding-inline:max(24px,calc(50% - 380px))}

@@ -446,7 +446,8 @@ function renderMonth() {
     if (cfg('rokuyo', false) && window.KoeRokuyo) cell.appendChild(Object.assign(el('span', 'rk'), { textContent: window.KoeRokuyo.rokuyo(d) }));
     const evs = eventsOn(d).sort((a, b) => (b.allDay - a.allDay) || (a.start - b.start))
       .concat(state.tasks.filter((t) => t.due && sameDay(t.due, d)).map((t) => ({ task: true, title: t.title })));
-    const max = WIDE.matches ? Math.max(cfg('monthMax', 3), Math.floor(((window.innerHeight - 170) / 6 - 28) / 20)) : cfg('monthMax', 3);
+    const lineH = { small: 18, normal: 21, large: 24 }[cfg('textSize', 'normal')] || 21;
+    const max = WIDE.matches ? Math.max(cfg('monthMax', 3), Math.floor(((window.innerHeight - 170) / 6 - 28) / lineH)) : cfg('monthMax', 3);
     evs.slice(0, evs.length > max ? max - 1 : max).forEach((ev) => {
       const x = el('div', 'm-ev ' + (ev.task ? 'task' : ev.allDay ? 'allday' : 'timed'));
       if (!ev.task) { x.style.setProperty('--c', ev.color); x.style.setProperty('--ct', ev.text || '#fff'); }
