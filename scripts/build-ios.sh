@@ -3,7 +3,7 @@
 set -e
 cd "$(dirname "$0")/.."
 rm -rf www && mkdir -p www/js
-cp index.html style.css themes.css techo.css notes.css config.js parse.js rokuyo.js manifest.webmanifest www/
+cp index.html style.css themes.css techo.css notes.css wide.css config.js parse.js rokuyo.js manifest.webmanifest www/
 cp js/*.js www/js/
 cp -R icons www/icons
 # アプリではGoogleのWeb用ログイン部品を読み込まない（ログインはiOSの仕組みで行う）

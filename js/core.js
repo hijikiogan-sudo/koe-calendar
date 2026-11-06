@@ -1,6 +1,6 @@
 // Koe：アプリ全体で使う入れ物、設定、日付の道具
 'use strict';
-const APP_VERSION = '202611051640'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
+const APP_VERSION = '202611061230'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
 const SCOPES = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/tasks';
 const API = 'https://www.googleapis.com/calendar/v3';
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
@@ -23,6 +23,9 @@ function applyCalColors(cals) {
   cals.forEach((c) => { c.baseColor = c.baseColor || c.color; c.color = colors[c.id] || c.baseColor; });
   return cals;
 }
+
+// 広い画面（パソコンなど）かどうか
+const WIDE = matchMedia('(min-width:900px)');
 
 const state = {
   view: cfg('startView', 'last') === 'last' ? store.get('view', 'week') : cfg('startView', 'last'),

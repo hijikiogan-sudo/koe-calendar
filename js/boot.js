@@ -160,6 +160,21 @@ function bind() {
   });
   $('#intext').addEventListener('blur', () => { if (pendingSlot && !$('#intext').value.trim()) setTimeout(clearSlot, 200); });
 
+  // キーボード：Escで閉じる、左右の矢印で前後へ
+  document.addEventListener('keydown', (e) => {
+    if (e.isComposing) return;
+    if (e.key === 'Escape') {
+      if (document.querySelector('.daypop')) closeDayPop();
+      else { closeVoice(); closeSheet(); }
+      return;
+    }
+    if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target.closest('input,textarea,select,[contenteditable]') || !$('#sheet').hidden || !$('#voice').hidden) return;
+    $(e.key === 'ArrowLeft' ? '#btn-prev' : '#btn-next').click();
+  });
+  // 窓の幅が変わったら、広い画面と狭い画面を切り替える
+  WIDE.addEventListener('change', () => { closeDayPop(); render(); });
+
   // 左右スワイプで前後へ
   let sx = 0, sy = 0, st = 0;
   const v = $('#view');

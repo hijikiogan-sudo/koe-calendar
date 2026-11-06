@@ -184,7 +184,7 @@ function renderToday() {
   const hol = state.holidays.get(ymd(today));
   section(hol && !todays.some((e) => e.title === hol) ? `今日の予定（${hol}）` : '今日の予定', todays.map((e) => evRow(e, today)), '予定はありません');
   const tks = visibleTasks().filter((t) => !t.due || t.due < tomorrow);
-  section('タスク', tks.map(taskRow), 'タスクはありません');
+  if (!WIDE.matches) section('タスク', tks.map(taskRow), 'タスクはありません'); // 広い画面では右の欄に出ている
   const tomorrowTasks = state.tasks.filter((t) => t.due && sameDay(t.due, tomorrow));
   const tmr = [...list(tomorrow).map((e) => evRow(e, tomorrow)), ...tomorrowTasks.map((t) => {
     const it = el('button', 'wl-ev wl-task');
@@ -378,7 +378,7 @@ function renderMonth() {
     if (cfg('rokuyo', false) && window.KoeRokuyo) cell.appendChild(Object.assign(el('span', 'rk'), { textContent: window.KoeRokuyo.rokuyo(d) }));
     const evs = eventsOn(d).sort((a, b) => (b.allDay - a.allDay) || (a.start - b.start))
       .concat(state.tasks.filter((t) => t.due && sameDay(t.due, d)).map((t) => ({ task: true, title: t.title })));
-    const max = cfg('monthMax', 3);
+    const max = WIDE.matches ? Math.max(cfg('monthMax', 3), Math.floor(((window.innerHeight - 170) / 6 - 28) / 20)) : cfg('monthMax', 3);
     evs.slice(0, evs.length > max ? max - 1 : max).forEach((ev) => {
       const x = el('div', 'm-ev ' + (ev.task ? 'task' : ev.allDay ? 'allday' : 'timed'));
       if (!ev.task) { x.style.setProperty('--c', ev.color); x.style.setProperty('--ct', ev.text || '#fff'); }
@@ -418,7 +418,10 @@ function openDayPop(d, cell) {
   const ph = pop.offsetHeight, below = cr.bottom + 10 + ph < window.innerHeight - 90;
   pop.style.top = `${(below ? cr.bottom + 10 : cr.top - 10 - ph) - ar.top}px`;
   pop.classList.add(below ? 'down' : 'up');
-  pop.style.setProperty('--ax', `${cr.left + cr.width / 2 - ar.left - 12}px`);
+  const cx = cr.left + cr.width / 2 - ar.left;
+  const px = Math.min(Math.max(cx - pop.offsetWidth / 2, 10), ar.width - pop.offsetWidth - 10);
+  pop.style.left = `${px}px`;
+  pop.style.setProperty('--ax', `${cx - px - 12}px`);
   bg.onclick = closeDayPop;
   pop.querySelector('.dp-close').onclick = closeDayPop;
   pop.querySelector('.dp-memo').onclick = () => { closeDayPop(); openMemo(d); };
