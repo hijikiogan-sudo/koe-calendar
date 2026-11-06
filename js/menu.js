@@ -237,7 +237,7 @@ function openMenu() {
       ${state.demo
         ? (cfgClientId() ? '<button class="act" id="m-login">Googleでログインする</button>' : '<p class="note">Googleとつなぐには config.js にクライアントIDを設定します（SETUP.md 参照）。</p>')
         : '<button class="act" id="m-logout">ログアウト</button>'}`)}
-    <p class="note">Koe ・ 版 ${APP_VERSION}<br>辞書と設定は、Google ToDoの「Koe設定」リストでiPhoneとパソコンに共有します。<br><a class="link" href="https://hijikiogan-sudo.github.io/koe-calendar/privacy.html" target="_blank" rel="noopener">プライバシーポリシー</a></p>`);
+    <p class="note">Koe ・ 版 ${APP_VERSION}<br>辞書と設定は、Google ToDoの「Koe設定」リストでiPhoneとパソコンに共有します。<br><a class="link" href="https://hijikiogan-sudo.github.io/koe-calendar/about.html" target="_blank" rel="noopener">Koeについて</a> ・ <a class="link" href="https://hijikiogan-sudo.github.io/koe-calendar/privacy.html" target="_blank" rel="noopener">プライバシーポリシー</a></p>`);
   const sh = $('#sheet');
   sh.querySelectorAll('.mgroup').forEach((d) => d.addEventListener('toggle', () => { if (d.open) menuOpen.add(d.dataset.g); else menuOpen.delete(d.dataset.g); }));
   sh.querySelectorAll('select.cfg').forEach((x) => x.onchange = () => {

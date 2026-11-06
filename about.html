@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Koe（コエ）｜声で入れる手帳</title>
+<meta name="description" content="Koe（コエ）は、話すか打つだけでGoogleカレンダーの予定とGoogle ToDoリストのタスクを登録できる手帳アプリです。">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<style>
+  :root{color-scheme:light dark;--bg:#fbf8f1;--fg:#2c2418;--muted:#6f6352;--line:#e2d9c6;--soft:#f2ecdf;--accent:#7a4a22;--on-accent:#fff}
+  @media (prefers-color-scheme:dark){:root{--bg:#1f1a14;--fg:#efe8da;--muted:#b3a792;--line:#3b3327;--soft:#2a241b;--accent:#e2c07d;--on-accent:#2c2418}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.8 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif}
+  main{max-width:760px;margin:0 auto;padding:40px 16px 64px}
+  a{color:var(--accent)}
+  .brand{display:flex;align-items:center;gap:14px}
+  .brand img{width:64px;height:64px;border-radius:15px;flex:none}
+  h1{font-size:30px;line-height:1.3;margin:0}
+  .brand small{display:block;color:var(--muted);font-size:14px;font-weight:400}
+  .lead{font-size:19px;line-height:1.7;margin:24px 0 18px}
+  .go{display:inline-block;background:var(--accent);color:var(--on-accent);font-weight:700;padding:11px 22px;border-radius:8px;text-decoration:none}
+  figure{margin:28px 0 0}
+  figure img{display:block;width:100%;height:auto;border-radius:8px;border:1px solid var(--line)}
+  figcaption{color:var(--muted);font-size:13px;margin-top:6px}
+  h2{font-size:19px;line-height:1.4;margin:36px 0 8px;padding-top:20px;border-top:1px solid var(--line)}
+  ul,ol{margin:6px 0;padding-left:1.4em}
+  li{margin:3px 0}
+  p{margin:6px 0}
+  .table-wrap{overflow-x:auto}
+  table{border-collapse:collapse;width:100%;font-size:15px;margin:10px 0}
+  th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line)}
+  th{background:var(--soft);font-weight:600}
+  code{font-size:13px;overflow-wrap:anywhere}
+  footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">
+    <img src="icons/icon-192.png" alt="">
+    <h1>Koe<small>コエ ・ 声で入れる手帳</small></h1>
+  </div>
+
+  <p class="lead">話すか打つだけで、Googleカレンダーの予定とGoogle ToDoリストのタスクを登録できる手帳アプリです。</p>
+  <a class="go" href="./">Koeを開く</a>
+  <p style="margin-top:10px;font-size:14px;color:var(--muted)">開いた画面の「ログインせずにお試し表示」から、Googleアカウントなしでダミーの予定で試せます。</p>
+
+  <figure>
+    <img src="images/about-month.jpg" width="1600" height="1000" alt="Koeの月表示。右にタスクの一覧、下に入力欄と声で登録するマイクのボタンがある画面" loading="lazy">
+    <figcaption>パソコンで見た月の画面（お試し表示のダミーの予定です）</figcaption>
+  </figure>
+
+  <h2>できること</h2>
+  <ul>
+    <li><b>声や文字で登録：</b>「明日14時 打ち合わせ」のように入れると、日時と内容を読み取ります。</li>
+    <li><b>登録前に必ず確認：</b>確認画面で内容を見て、直してから登録します。勝手には登録しません。</li>
+    <li><b>今日・日・週・月の表示：</b>Googleカレンダーの予定を手帳のように見られます。</li>
+    <li><b>予定の変更と削除：</b>時刻や内容の変更、繰り返し予定の変更もできます。削除は確認してから行います。</li>
+    <li><b>タスクの管理：</b>Google ToDoリストのタスクを登録し、完了にできます。</li>
+    <li><b>表示の切り替え：</b>表示するカレンダーとToDoリストを選べます。</li>
+    <li><b>パソコンでの操作：</b>広い画面に合わせた表示、マウスでの移動、キーボード操作に対応します。</li>
+  </ul>
+
+  <h2>使い方</h2>
+  <ol>
+    <li>Googleアカウントでログインし、カレンダーとToDoリストの利用を許可します。</li>
+    <li>マイクのボタンを押して話すか、入力欄に打ちます。</li>
+    <li>確認画面で内容を確かめて、登録します。</li>
+  </ol>
+
+  <h2>Googleアカウントの情報の使いかた</h2>
+  <p>Koeは次の許可を使います。どれも、利用者が画面で行う操作のためだけに使います。</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>許可</th><th>使う目的</th></tr></thead>
+      <tbody>
+        <tr><td>カレンダーの一覧を見る<br><code>calendar.calendarlist.readonly</code></td><td>カレンダーの名前と色を表示し、表示するカレンダーや登録先を選べるようにします。</td></tr>
+        <tr><td>カレンダーの予定を見る・編集する<br><code>calendar.events</code></td><td>予定を表示し、利用者の操作に応じて登録・変更・削除します。</td></tr>
+        <tr><td>ToDoリストのタスクを見る・編集する<br><code>tasks</code></td><td>タスクを表示し、利用者の操作に応じて登録・変更・完了・削除します。辞書と設定をToDoリスト内の「Koe設定」に保存し、端末の間で共有します。</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <ul>
+    <li>Koeは独自のサーバーを持ちません。予定やタスクは、利用者の端末とGoogleの間で直接やり取りします。</li>
+    <li>開発者が利用者の予定やタスクを見ることはありません。販売や広告にも使いません。</li>
+    <li>詳しくは<a href="privacy.html">プライバシーポリシー</a>をご覧ください。声の文字起こしの扱いも書いています。</li>
+  </ul>
+
+  <h2>In English</h2>
+  <p>Koe is a voice-first planner for Google Calendar and Google Tasks. Speak or type an event or task, check it on the confirmation screen, and Koe adds it to your account. It requests access only for user-facing features: viewing your calendar list, viewing and editing calendar events, and viewing and editing tasks. Koe has no server of its own, so your data moves directly between your device and Google. It is never sold or used for advertising. See the <a href="privacy.html">privacy policy</a> (in Japanese).</p>
+
+  <footer>
+    <a href="privacy.html">プライバシーポリシー</a> ・ <a href="https://github.com/hijikiogan-sudo/koe-calendar/issues">お問い合わせ</a><br>
+    Google カレンダー、Google ToDo リストは Google LLC の商標です。Koe は Google が提供するものではありません。
+  </footer>
+</main>
+</body>
+</html>
