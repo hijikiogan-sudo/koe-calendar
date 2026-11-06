@@ -102,6 +102,7 @@ button{background:none;border:0;padding:0;cursor:pointer}
 .sheet .cal.on i{background:var(--c)}
 .sheet .cal.on i::after{content:"✓";color:#fff;font-size:12px;font-style:normal;display:block;text-align:center;line-height:14px}
 .sheet .act{margin-top:14px;width:100%;padding:12px;border-radius:calc(var(--r) + 2px);background:var(--soft);font-weight:600}
+.sheet .act:disabled{opacity:.55}
 .sheet .sec{font-size:12px;color:var(--muted);margin:16px 0 4px;font-weight:700;letter-spacing:.05em}
 
 /* 確認画面 */
@@ -202,8 +203,8 @@ button{background:none;border:0;padding:0;cursor:pointer}
 @keyframes pulse{50%{box-shadow:0 0 0 18px var(--accent-ring)}}
 .v-hint{font-size:14px;color:var(--muted);text-align:center}
 
-.login{position:fixed;inset:0;background:var(--bg);z-index:20;display:flex;align-items:center;justify-content:center;padding:24px}
-.login-card{max-width:340px;text-align:center;display:flex;flex-direction:column;gap:14px;align-items:stretch}
+.login{position:fixed;inset:0;background:var(--bg);z-index:20;display:flex;align-items:center;justify-content:center;padding:24px;overflow-y:auto}
+.login-card{max-width:340px;margin:auto;text-align:center;display:flex;flex-direction:column;gap:14px;align-items:stretch}
 .login-card img{width:88px;height:88px;border-radius:22px;margin:0 auto;box-shadow:0 6px 18px rgba(0,0,0,.15)}
 .login-card h1{margin:0;font-family:var(--font-head);font-size:30px;letter-spacing:.02em}
 .login-card p{margin:0;color:var(--muted);line-height:1.7}
@@ -213,6 +214,10 @@ button{background:none;border:0;padding:0;cursor:pointer}
 .gsi-btn{display:flex;align-items:center;justify-content:center;gap:10px;min-height:44px;padding:0 12px;background:#fff;color:#1f1f1f;border:1px solid #747775;border-radius:4px;font:500 14px/20px "Google Sans",Roboto,-apple-system,"Hiragino Sans",sans-serif}
 .gsi-btn svg{width:20px;height:20px;flex:none}
 .gsi-btn:disabled{opacity:.5}
+.login-more{display:flex;flex-direction:column;gap:6px;margin-top:-8px}
+.login-more[hidden]{display:none}
+.login-more .gsi-btn{margin-top:10px}
+.login-card p.login-note{font-size:12px;line-height:1.5}
 .login-links{display:flex;justify-content:center;gap:16px;flex-wrap:wrap}
 .link{color:var(--link);text-decoration:underline;font-size:14px}
 

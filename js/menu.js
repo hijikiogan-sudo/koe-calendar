@@ -163,6 +163,7 @@ function bindShowChecks(sh) {
     const on = !set.has(id);
     b.classList.toggle('on', on); b.setAttribute('aria-checked', on);
     if (state.local && !isList) store.set('localHidden', [...set]);
+    if (state.apple) store.set(isList ? 'appleHiddenLists' : 'appleHidden', [...set]);
     if (!state.offGoogle) { store.set(isList ? 'hiddenLists' : 'hiddenCals', [...set]); touchSync(); } // Googleの表示の設定は書き換えない
     // 消すほうはすぐ画面に反映し、そのあと最新を読む
     state.events = state.events.filter((ev) => !state.hidden.has(ev.calId));
@@ -233,15 +234,13 @@ function openMenu() {
       <p class="note" style="margin-top:6px">iPhoneは「たかし」を「隆」などの漢字で書き起こします。確認画面に出た字を登録してください。「、」で区切ると複数まとめて登録できます。Google ToDoの「Koe設定」リストを使って、iPhoneとパソコンで共有します。</p>`)}
     ${MOUSE.matches ? group('keys', 'キーボード操作', KEY_HELP) : ''}
     ${group('sync', '同期とアカウント', `
-      <p class="note" style="margin-top:0">${state.local ? 'Koeの中だけに保存しています（試作）。通知はまだ鳴りません。アプリを消すと中身も消えるので、ときどき書き出して、別の場所に置いてください。アプリを閉じるとGoogleの表示に戻ります。' : state.apple ? 'Appleカレンダーを表示中です（試作）。ここでの登録・変更・削除はAppleカレンダーとリマインダーに入ります。アプリを閉じるとGoogleの表示に戻ります。' : state.demo ? 'お試し表示中です。' : state.token ? 'Googleに接続中です。開いたときと、アプリに戻ったときに自動で更新します。' : 'Googleとの接続が切れています。'}</p>
+      <p class="note" style="margin-top:0">${state.local ? 'Koeの中だけに保存しています。通知はまだ鳴りません。アプリを消すと中身も消えるので、ときどき書き出して、別の場所に置いてください。' : state.apple ? 'Appleカレンダーを使っています。ここでの登録・変更・削除はAppleカレンダーとリマインダーに入ります。' : state.demo ? 'お試し表示中です。' : state.token ? 'Googleに接続中です。開いたときと、アプリに戻ったときに自動で更新します。' : 'Googleとの接続が切れています。'}</p>
       <p class="note" style="margin-top:4px">もしかしての候補：<span id="m-corpus"></span></p>
       <button class="act" id="m-corpus-reload" style="margin-top:6px">今すぐ更新</button>
       ${state.local ? `
         <button class="act" id="m-export">書き出す（バックアップ）</button>
-        <label class="act" style="display:block;text-align:center;cursor:pointer">読み込む<input type="file" id="m-import" accept=".json,application/json" hidden></label>
-        <button class="act" id="m-local">Googleの表示に戻る</button>` : ''}
-      ${NATIVE && !state.local ? `<button class="act" id="m-applecal">${state.apple ? 'Googleの表示に戻る' : 'Appleカレンダーを表示する（試作）'}</button>` : ''}
-      ${NATIVE && !state.offGoogle ? '<button class="act" id="m-local">Koeだけで使う（試作）</button>' : ''}
+        <label class="act" style="display:block;text-align:center;cursor:pointer">読み込む<input type="file" id="m-import" accept=".json,application/json" hidden></label>` : ''}
+      ${NATIVE ? '<button class="act" id="m-mode">使い方を変える</button>' : ''}
       ${state.offGoogle ? '' : state.demo
         ? (cfgClientId() ? '<button class="act" id="m-login">Googleでログインする</button>' : '<p class="note">Googleとつなぐには config.js にクライアントIDを設定します（SETUP.md 参照）。</p>')
         : '<button class="act" id="m-logout">ログアウト</button>'}`)}
@@ -300,10 +299,25 @@ function openMenu() {
     await run; showCorpus();
     toast(corpusStatus || '更新しました');
   };
-  const ac = $('#m-applecal'); if (ac) ac.onclick = state.apple ? leaveAppleView : enterAppleView;
-  const lv = $('#m-local'); if (lv) lv.onclick = state.local ? leaveLocalView : enterLocalView;
+  const mm = $('#m-mode'); if (mm) mm.onclick = openModeSheet;
   const ex = $('#m-export'); if (ex) ex.onclick = exportLocal;
   const im = $('#m-import'); if (im) im.onchange = () => { if (im.files[0]) importLocal(im.files[0]); };
   const lo = $('#m-logout'); if (lo) lo.onclick = logout;
   const li = $('#m-login'); if (li) li.onclick = () => { closeSheet(); state.demo = false; showLogin(); };
+}
+
+// アプリ版：Google、Apple、Koeだけの切り替え。切り替えても、それぞれの予定は元の場所に残る
+function openModeSheet() {
+  const cur = state.demo ? '' : state.local ? 'local' : state.apple ? 'apple' : 'google';
+  const opt = (id, key, label) => `<button class="act" id="${id}"${cur === key ? ' disabled' : ''}>${label}${cur === key ? '（使用中）' : ''}</button>`;
+  openSheet(`<h2>使い方を変える</h2>
+    <p class="note">切り替えても、予定は移りません。それぞれの場所に残っていて、戻せばまた見られます。</p>
+    ${opt('mode-google', 'google', 'Googleカレンダーを使う')}
+    ${opt('mode-apple', 'apple', 'Appleカレンダーを使う')}
+    ${opt('mode-local', 'local', 'Koeだけで使う')}
+    <button class="act" id="mode-back">戻る</button>`);
+  $('#mode-google').onclick = useGoogleMode;
+  $('#mode-apple').onclick = enterAppleView;
+  $('#mode-local').onclick = enterLocalView;
+  $('#mode-back').onclick = openMenu;
 }

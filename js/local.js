@@ -1,10 +1,8 @@
 // Koe：Googleを使わず、Koeの中だけに予定を保存する（試作・アプリ版のみ）
 'use strict';
-const LOCAL_KEY = 'koeLocalView';
 const KoeLocal = NATIVE ? window.Capacitor.registerPlugin('KoeLocal') : null;
-const isLocalView = () => { try { return NATIVE && sessionStorage.getItem(LOCAL_KEY) === '1'; } catch { return false; } };
-function enterLocalView() { sessionStorage.setItem(LOCAL_KEY, '1'); location.reload(); }
-function leaveLocalView() { try { sessionStorage.removeItem(LOCAL_KEY); } catch {} location.reload(); }
+const isLocalView = () => NATIVE && store.get('useMode', null) === 'local';
+function enterLocalView() { store.set('useMode', 'local'); location.reload(); }
 
 const LOCAL_CALS = [
   { id: 'me', name: '自分用', color: '#2e7d4f', text: '#fff', primary: true, writable: true },

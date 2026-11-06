@@ -27,7 +27,7 @@ window.onGsiLoaded = () => {
 };
 
 // iOSアプリ：ログインはiOSの画面で行い、次からは保存した鍵で自動的につなぐ
-async function startNative() {
+function prepareNativeLogin() {
   tokenClient = {
     requestAccessToken() {
       KoeAuth.signIn({ clientId: cfgClientId(), scope: SCOPES })
@@ -36,6 +36,12 @@ async function startNative() {
     },
   };
   $('#btn-login').disabled = false;
+  // アプリ版の最初の画面では、Google、Apple、Koeだけから選べる
+  $('#login-lead').innerHTML = '話すだけで、予定とタスクが入る手帳。<br>予定をどこに置くか選んでください。';
+  $('#login-more').hidden = false;
+}
+
+async function startNative() {
   const calCache = store.get('calCache', []);
   if (calCache.length) { state.calendars = applyCalColors(calCache); showCachedFirst(); }
   try {
@@ -145,6 +151,8 @@ function bind() {
   $('#sheet-bg').onclick = () => { closeVoice(); closeSheet(); };
   $('#btn-login').onclick = () => tokenClient && tokenClient.requestAccessToken({ prompt: '' });
   $('#btn-demo').onclick = startDemo;
+  $('#btn-use-apple').onclick = enterAppleView;
+  $('#btn-use-local').onclick = enterLocalView;
   $('#btn-mic').onclick = () => { if ($('#intext').value.trim()) $('#inbar').requestSubmit(); else startVoice(); };
   $('#v-mic').onclick = () => { if (voice.rec) voice.rec.stop(); else listen(); };
   $('#v-kb').onclick = () => {
@@ -239,6 +247,7 @@ applyTheme();
 bind();
 render();
 const forceDemo = new URLSearchParams(location.search).has('demo');
+if (NATIVE) prepareNativeLogin();
 if (forceDemo || !cfgClientId()) {
   startDemo();
 } else if (isLocalView()) {

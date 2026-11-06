@@ -67,30 +67,28 @@ async function ensureFreshToken() {
 }
 
 // 試作：Appleカレンダーの予定を、Koeの画面で見て、登録・変更・削除する
-// この表示の間はGoogleと通信しない。アプリを閉じると、いつものGoogleの表示に戻る
-const APPLE_KEY = 'koeAppleView';
+// この表示の間はGoogleと通信しない。選んだ使い方は端末に覚え、次に開いたときも同じ使い方で始める
 const APPLE_KEEP = ['defCal', 'defList', 'memoCal']; // Googleのカレンダーを指す設定は、Appleの表示中に書き換えない
-const isAppleView = () => { try { return NATIVE && sessionStorage.getItem(APPLE_KEY) === '1'; } catch { return false; } };
+const isAppleView = () => NATIVE && store.get('useMode', null) === 'apple';
 
 // 読み込みの途中の処理が残らないよう、切り替えは開き直して行う
 async function enterAppleView() {
   try {
     const { status } = await KoeCalendar.request();
     if (status !== 'allowed') {
+      if (!$('#login').hidden) { toast('カレンダーの利用が許可されていません。設定アプリで許可してください'); return; }
       openSheet(`<h2>Appleカレンダー</h2>
         <p class="note">カレンダーの利用が許可されていません。設定アプリのプライバシーから、Koeのカレンダーをオンにしてください。</p>
         <button class="act" id="ac-close">閉じる</button>`);
       $('#ac-close').onclick = closeSheet;
       return;
     }
-    sessionStorage.setItem(APPLE_KEY, '1');
+    store.set('useMode', 'apple');
     location.reload();
   } catch (err) { console.warn(err); toast('Appleカレンダーを読めませんでした'); }
 }
-function leaveAppleView() {
-  try { sessionStorage.removeItem(APPLE_KEY); } catch {}
-  location.reload();
-}
+// Googleで使う（選択を消すと、Googleの流れで始まる）
+function useGoogleMode() { store.del('useMode'); location.reload(); }
 
 // 背景の色に合わせて、文字を白か黒にする
 function textOn(hex) {
@@ -100,8 +98,18 @@ function textOn(hex) {
 }
 
 async function startApple() {
+  // あとから許可を切られたときは、空の画面を出さず、選び直してもらう
+  let allowed = false;
+  try { allowed = (await KoeCalendar.request()).status === 'allowed'; } catch (err) { console.warn(err); }
+  if (!allowed) {
+    store.del('useMode');
+    showLogin();
+    toast('カレンダーの利用が許可されていません。使い方を選び直してください');
+    return;
+  }
   state.apple = true; state.offGoogle = true;
-  state.hidden = new Set(); state.hiddenLists = new Set(); // Googleの表示の設定は使わず、書き換えもしない
+  // Googleの表示の設定は使わず、書き換えもしない
+  state.hidden = new Set(store.get('appleHidden', [])); state.hiddenLists = new Set(store.get('appleHiddenLists', []));
   try {
     const { calendars } = await KoeCalendar.calendars();
     state.calendars = applyCalColors(calendars.map((c) => ({
