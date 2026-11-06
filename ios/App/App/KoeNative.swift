@@ -2,6 +2,7 @@
 import AVFoundation
 import AuthenticationServices
 import Capacitor
+import WebKit
 import CryptoKit
 import Speech
 import UIKit
@@ -11,6 +12,12 @@ class KoeBridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(KoeAuthPlugin())
         bridge?.registerPluginInstance(KoeSpeechPlugin())
+        // Macで動くときは、iPad向けの画面が77%に縮小されるので、その分を拡大して元の大きさに戻す
+        if ProcessInfo.processInfo.isiOSAppOnMac {
+            let source = "document.querySelector('meta[name=viewport]').setAttribute('content','initial-scale=1.3,minimum-scale=1.3,maximum-scale=1.3,viewport-fit=cover')"
+            webView?.configuration.userContentController.addUserScript(
+                WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
     }
 }
 
