@@ -9,6 +9,7 @@ const PAGE = './';
 const assetsOf = (html) => [...html.matchAll(/(?:href|src)="([^":]+\?v=\d+)"/g)].map((m) => new URL(m[1], self.registration.scope).href);
 
 // 最新のページ本体と、それが読むファイルを控える。古い版のファイルは消す
+// （今まさに開いている1つ前の版のファイルは残す。消すと新旧が混ざって画面が壊れる）
 async function saveShell(res) {
   const c = await caches.open(CACHE);
   const html = await res.clone().text();
@@ -18,9 +19,11 @@ async function saveShell(res) {
     const r = await fetch(u);
     if (r.ok) await c.put(u, r);
   }));
+  const prev = await c.match(PAGE);
+  const keep = new Set(assets.concat(prev ? assetsOf(await prev.text()) : []));
   await c.put(PAGE, res);
   const keys = await c.keys();
-  await Promise.all(keys.filter((k) => new URL(k.url).search.includes('v=') && !assets.includes(k.url)).map((k) => c.delete(k)));
+  await Promise.all(keys.filter((k) => new URL(k.url).search.includes('v=') && !keep.has(k.url)).map((k) => c.delete(k)));
 }
 async function refreshShell() {
   const res = await fetch(PAGE, { cache: 'no-cache' });
