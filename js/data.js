@@ -30,8 +30,11 @@ async function load() {
     state.events = shown.filter((ev) => !ev.diary && !state.hidden.has(ev.calId));
     state.tasks = tasks;
     state.stale = null; state.authLost = false;
-    saveCache(rangeKey(), shown.filter((ev) => !state.hidden.has(ev.calId) || ev.diary), tasks, hol);
-    render();
+    const kept = shown.filter((ev) => !state.hidden.has(ev.calId) || ev.diary);
+    saveCache(rangeKey(), kept, tasks, hol);
+    const same = state.firstKey && state.firstKey === cacheKey(kept, tasks, [...hol]);
+    state.firstKey = null;
+    if (same) renderConn(); else render(); // 先に出した控えと同じなら描き直さない
   } catch (err) {
     if (id !== state.reqId) return;
     if (err && err.auth) { handleError(err); return; }
@@ -67,6 +70,16 @@ function loadCached() {
   state.stale = hit ? hit.at : -1;
   render();
   return !!hit;
+}
+// 開いた直後：前回の予定を「時点」の帯なしで先に出す（このあとすぐ最新を取りに行く）
+const cacheKey = (ev, tasks, hol) => `${rangeKey()}|${JSON.stringify([ev, tasks, hol])}`;
+const calKey = () => JSON.stringify([state.calendars.map((c) => [c.id, c.color]), [...state.hidden]]);
+function showCachedFirst() {
+  const hit = loadCached();
+  state.stale = null;
+  renderConn();
+  const cached = store.get('evCache', {})[rangeKey()], tc = store.get('taskCache', null);
+  state.firstKey = hit && tc ? cacheKey(cached.ev, tc.tasks, cached.hol) : null;
 }
 function renderConn() {
   const bar = $('#conn-bar');

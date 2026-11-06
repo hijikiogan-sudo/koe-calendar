@@ -1,6 +1,6 @@
 // Koe：アプリ全体で使う入れ物、設定、日付の道具
 'use strict';
-const APP_VERSION = '202611061238'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
+const APP_VERSION = '202611061415'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
 const SCOPES = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/tasks';
 const API = 'https://www.googleapis.com/calendar/v3';
 const WD = ['日', '月', '火', '水', '木', '金', '土'];

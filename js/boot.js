@@ -37,14 +37,14 @@ async function startNative() {
   };
   $('#btn-login').disabled = false;
   const calCache = store.get('calCache', []);
-  if (calCache.length) { state.calendars = applyCalColors(calCache); loadCached(); }
+  if (calCache.length) { state.calendars = applyCalColors(calCache); showCachedFirst(); }
   try {
     await nativeRefresh();
     await startGoogle();
   } catch (err) {
     if (err.code === 'none') { showLogin(); return; }
     if (err.code === 'revoked') { connectionLost(); return; }
-    if (!calCache.length) toast('通信を確認してください'); // 電波がないときは保存済みの予定を見せる
+    if (calCache.length) loadCached(); else toast('通信を確認してください'); // 電波がないときは保存済みの予定を見せる
   }
 }
 
@@ -52,8 +52,16 @@ function showLogin() { $('#login').hidden = false; }
 
 async function startGoogle() {
   try {
-    await fetchCalendars();
-    await load();
+    const calCache = store.get('calCache', []);
+    if (!calCache.length) { // 初めて：カレンダーの一覧を待ってから読む
+      await fetchCalendars();
+      await load();
+    } else { // 2回目から：前回の予定をすぐ出して、一覧と予定を同時に取り直す
+      if (!state.calendars.length) { state.calendars = applyCalColors(calCache); showCachedFirst(); }
+      const before = calKey();
+      await Promise.all([fetchCalendars(), load()]);
+      if (calKey() !== before) await load(); // カレンダーが増減していたら読み直す
+    }
     refreshCorpus(); // 候補用。裏で読み込む
     syncDict();
   } catch (err) {
@@ -211,6 +219,10 @@ window.addEventListener('offline', () => renderConn());
 
 // ---------- 起動 ----------
 if (!NATIVE && 'serviceWorker' in navigator && !location.pathname.includes('_t')) navigator.serviceWorker.register('sw.js').catch((err) => console.warn(err));
+if (new URLSearchParams(location.search).has('v')) { // 新しい版を開き直したときの印を消す
+  const q = new URLSearchParams(location.search); q.delete('v');
+  history.replaceState(null, '', `${location.pathname}${q.size ? `?${q}` : ''}`);
+}
 checkNewVersion();
 applyTheme();
 bind();
