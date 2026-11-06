@@ -141,6 +141,7 @@ function bind() {
   $('#title').onclick = goToday;
   $('#btn-menu').onclick = openMenu;
   $('#btn-search').onclick = () => openSearch();
+  $('#btn-show').onclick = openShow;
   $('#sheet-bg').onclick = () => { closeVoice(); closeSheet(); };
   $('#btn-login').onclick = () => tokenClient && tokenClient.requestAccessToken({ prompt: '' });
   $('#btn-demo').onclick = startDemo;
@@ -190,6 +191,7 @@ function bind() {
     else if (e.key === 't' || e.key === 'T') $('#btn-today').click();
     else if (e.key === 'n' || e.key === 'N') { e.preventDefault(); $('#intext').focus(); }
     else if (e.key === '/') { e.preventDefault(); openSearch(); }
+    else if (e.key === 'f' || e.key === 'F') openShow();
     else if (e.key === '?') openSheet(`<h2>キーボード操作</h2>${KEY_HELP}<button class="act" id="keys-close">閉じる</button>`), $('#keys-close').onclick = closeSheet;
   });
   // 窓の幅が変わったら、広い画面と狭い画面を切り替える

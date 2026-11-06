@@ -465,7 +465,7 @@ function openConfirm(text, slot, raw) {
       const undo = v.kind === 'task' ? await insertTask(v) : await insertEvent(v);
       noteCorpus(v);
       setInText('');
-      showUndo(`${v.kind === 'task' ? 'タスクを' : ''}登録しました：${v.title}`, async () => { await undo(); load(); });
+      showUndo(`${v.kind === 'task' ? 'タスクを' : ''}登録しました：${v.title}${hiddenNote(v)}`, async () => { await undo(); load(); });
       offerDict([window.KoeParse.dictDiff(p.title, v.title), v.kind === 'task' ? null : window.KoeParse.dictDiff(p.location, v.location)]);
     },
   });

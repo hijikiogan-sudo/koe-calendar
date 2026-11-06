@@ -7,6 +7,7 @@ function render() {
   hideTip();
   $('#title').innerHTML = titleHTML();
   $('#demo-banner').hidden = !state.demo;
+  $('#btn-show').classList.toggle('on', state.calendars.some((c) => state.hidden.has(c.id)) || state.taskLists.some((l) => state.hiddenLists.has(l.id)));
   renderConn();
   const v = $('#view');
   const keepScroll = v.querySelector('.tg-scroll[data-init]');

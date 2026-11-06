@@ -29,7 +29,7 @@ const THEMES = [
   { id: 'gold', name: 'ネイビー×ゴールド', sw: ['#1b2a4a', '#c9a85c', '#f8f6f0'] },
 ];
 const DEFAULT_THEME = 'techo-camel';
-const KEY_HELP = [['N', '入力欄へ'], ['T', '今日に戻る'], ['1 〜 4', '今日・日・週・月'], ['← →', '前へ・次へ'], ['/', '検索'], ['Enter', '入力した内容を確認へ'], ['Shift+Enter', '入力欄で改行'], ['Esc', '閉じる・やめる'], ['?', 'この一覧']]
+const KEY_HELP = [['N', '入力欄へ'], ['T', '今日に戻る'], ['1 〜 4', '今日・日・週・月'], ['← →', '前へ・次へ'], ['/', '検索'], ['F', '表示するものを選ぶ'], ['Enter', '入力した内容を確認へ'], ['Shift+Enter', '入力欄で改行'], ['Esc', '閉じる・やめる'], ['?', 'この一覧']]
   .map(([k, t]) => `<div class="row"><span><kbd>${k}</kbd></span><span>${t}</span></div>`).join('');
 const MODES = [{ id: 'auto', name: '自動' }, { id: 'light', name: 'ライト' }, { id: 'dark', name: 'ダーク' }];
 const darkMQ = window.matchMedia('(prefers-color-scheme: dark)');
@@ -64,7 +64,7 @@ function touchSync() {
 function syncedSettings() {
   const c = {};
   try { Object.keys(localStorage).filter((k) => k.startsWith('cfg.')).forEach((k) => { c[k.slice(4)] = store.get(k, null); }); } catch {}
-  return { cfg: c, theme: store.get('theme', null), mode: store.get('mode', null), hidden: store.get('hiddenCals', null) };
+  return { cfg: c, theme: store.get('theme', null), mode: store.get('mode', null), hidden: store.get('hiddenCals', null), hiddenLists: store.get('hiddenLists', null) };
 }
 function applySynced(r) {
   if (!r || !r.settings) return;
@@ -73,6 +73,7 @@ function applySynced(r) {
   if (x.theme) store.set('theme', x.theme);
   if (x.mode) store.set('mode', x.mode);
   if (x.hidden) { store.set('hiddenCals', x.hidden); state.hidden = new Set(x.hidden); state.hiddenSaved = true; }
+  if (x.hiddenLists) { store.set('hiddenLists', x.hiddenLists); state.hiddenLists = new Set(x.hiddenLists); }
   applyTheme();
   applyCalColors(state.calendars);
   if ($('#sheet').hidden && $('#voice').hidden) load();
@@ -137,6 +138,44 @@ function offerDict(pairs) {
   const timer = setTimeout(() => box.remove(), 15000);
   box.querySelector('.no').onclick = () => { clearTimeout(timer); box.remove(); };
   box.querySelector('.yes').onclick = () => { clearTimeout(timer); addDict(p.from, p.to); box.remove(); toast(`辞書に登録：${p.from} → ${p.to}`); };
+}
+
+// ---------- 表示するカレンダーとToDoリストを選ぶ ----------
+const showRow = (attr, id, name, on, color) => `<button class="cal ${on ? 'on' : ''}" ${attr}="${esc(id)}" role="checkbox" aria-checked="${on}" style="--c:${color}"><i></i>${esc(name)}</button>`;
+function openShow() {
+  const cals = state.calendars.map((c) => showRow('data-id', c.id, c.name, !state.hidden.has(c.id), c.color)).join('');
+  const lists = state.taskLists.map((l) => showRow('data-list', l.id, l.title, !state.hiddenLists.has(l.id), 'var(--accent)')).join('');
+  openSheet(`<h2>表示するもの</h2>
+    <div class="sec">カレンダー</div>${cals || '<p class="note">カレンダーを読み込んでいます</p>'}
+    ${lists ? `<div class="sec">ToDoリスト</div>${lists}` : ''}
+    <p class="note">チェックを外すと、Koeの画面に出なくなるだけです。Googleの予定やタスクは消えません。</p>
+    <button class="act" id="show-close">閉じる</button>`);
+  const sh = $('#sheet');
+  bindShowChecks(sh);
+  $('#show-close').onclick = closeSheet;
+}
+function bindShowChecks(sh) {
+  sh.querySelectorAll('.cal').forEach((b) => b.onclick = () => {
+    const isList = 'list' in b.dataset;
+    const set = isList ? state.hiddenLists : state.hidden, id = isList ? b.dataset.list : b.dataset.id;
+    set.has(id) ? set.delete(id) : set.add(id);
+    const on = !set.has(id);
+    b.classList.toggle('on', on); b.setAttribute('aria-checked', on);
+    store.set(isList ? 'hiddenLists' : 'hiddenCals', [...set]); touchSync();
+    // 消すほうはすぐ画面に反映し、そのあと最新を読む
+    state.events = state.events.filter((ev) => !state.hidden.has(ev.calId));
+    state.tasks = state.tasks.filter((t) => !state.hiddenLists.has(t.listId));
+    render();
+    load();
+  });
+}
+// 表示を切っている先に登録したときは、画面に出ない理由を伝える
+function hiddenNote(v) {
+  if (v.kind === 'task') {
+    const id = v.listId || (state.taskLists[0] && state.taskLists[0].id);
+    return state.hiddenLists.has(id) ? '（表示を切っているリストです）' : '';
+  }
+  return state.hidden.has(v.calId) ? '（表示を切っているカレンダーです）' : '';
 }
 
 const menuOpen = new Set();
@@ -237,13 +276,7 @@ function openMenu() {
     toast(`辞書に追加：${from} → ${to || '（消す）'}`);
     const top = sh.scrollTop; openMenu(); $('#sheet').scrollTop = top;
   };
-  sh.querySelectorAll('.cal').forEach((b) => b.onclick = () => {
-    const id = b.dataset.id;
-    state.hidden.has(id) ? state.hidden.delete(id) : state.hidden.add(id);
-    b.classList.toggle('on');
-    store.set('hiddenCals', [...state.hidden]); touchSync();
-    load();
-  });
+  bindShowChecks(sh);
   const showCorpus = () => {
     const n = (k) => Object.keys(getCorpus(k)).length;
     const when = corpus && corpus.at ? `（${new Date(corpus.at).toLocaleString('ja-JP')} 読み込み）` : '（過去の予定はまだ読み込んでいません）';

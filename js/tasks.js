@@ -23,7 +23,7 @@ async function fetchTasks() {
   allLists = ls.items || [];
   state.taskLists = allLists.filter((l) => l.title !== SETTINGS_LIST).map((l) => ({ id: l.id, title: l.title }));
   const out = [];
-  await Promise.all(state.taskLists.map(async (l) => {
+  await Promise.all(state.taskLists.filter((l) => !state.hiddenLists.has(l.id)).map(async (l) => {
     let pageToken = '';
     do {
       const q = new URLSearchParams({ showCompleted: 'false', showHidden: 'false', maxResults: '100' });

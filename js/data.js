@@ -7,7 +7,7 @@ async function load() {
   if (state.demo) {
     demoEvents().forEach((ev) => { const c = state.calendars.find((x) => x.id === ev.calId); if (c) ev.color = c.color; });
     state.events = demoEvents().filter((ev) => !state.hidden.has(ev.calId) && ev.start < e && ev.end > s);
-    state.tasks = demoTaskList().slice();
+    state.tasks = demoTaskList().filter((t) => !state.hiddenLists.has(t.listId));
     state.taskLists = DEMO_LISTS;
     state.diary = state.demoDiary || new Map();
     state.holidays = new Map([[`${new Date().getFullYear()}-11-03`, '文化の日']]);
@@ -60,7 +60,7 @@ function loadCached() {
   const hit = store.get('evCache', {})[rangeKey()];
   const tc = store.get('taskCache', null);
   if (tc) {
-    state.tasks = (tc.tasks || []).map((t) => ({ ...t, due: t.due ? new Date(t.due) : null }));
+    state.tasks = (tc.tasks || []).filter((t) => !state.hiddenLists.has(t.listId)).map((t) => ({ ...t, due: t.due ? new Date(t.due) : null }));
     state.taskLists = tc.lists || [];
   }
   const cached = hit ? hit.ev.map((ev) => ({ ...ev, start: new Date(ev.start), end: new Date(ev.end), color: (state.calendars.find((c) => c.id === ev.calId) || ev).color })) : [];

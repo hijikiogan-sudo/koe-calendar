@@ -470,3 +470,8 @@ body.is-dragging{overflow:hidden;touch-action:none}
 .dh-memo{position:absolute;top:3px;right:2px;font-size:8px;line-height:1}
 .dp-memo{display:block;width:100%;text-align:left;padding:7px 12px;font-size:13px;line-height:1.4;color:var(--muted);border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent}
 .dh .rk{display:block;font-size:8.5px;color:var(--muted);font-weight:500;margin-top:1px;letter-spacing:0}
+
+/* 表示するものを選ぶ：切っているものがあるときに印を出す */
+#btn-show{position:relative}
+#btn-show.on::after{content:"";position:absolute;top:7px;right:6px;width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--head-bg,var(--bg))}
+.sheet .cal[data-list].on i::after{color:var(--on-accent)}
