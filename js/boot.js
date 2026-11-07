@@ -104,7 +104,7 @@ function connectionLost() {
 
 function handleError(err) {
   if (err && err.auth) { connectionLost(); return; }
-  console.error(err);
+  console.error(err && err.message ? err.message : String(err));
   toast(err && err.message ? err.message : '読み込みに失敗しました');
 }
 
@@ -238,7 +238,7 @@ window.addEventListener('online', () => { if (state.token) load(); });
 window.addEventListener('offline', () => renderConn());
 
 // ---------- 起動 ----------
-if (!NATIVE && 'serviceWorker' in navigator && !location.pathname.includes('_t')) navigator.serviceWorker.register('sw.js').catch((err) => console.warn(err));
+if (!NATIVE && 'serviceWorker' in navigator && !location.pathname.includes('_t')) navigator.serviceWorker.register('sw.js').catch((err) => console.warn(err && err.message ? err.message : String(err)));
 if (new URLSearchParams(location.search).has('v')) { // 新しい版を開き直したときの印を消す
   const q = new URLSearchParams(location.search); q.delete('v');
   history.replaceState(null, '', `${location.pathname}${q.size ? `?${q}` : ''}`);

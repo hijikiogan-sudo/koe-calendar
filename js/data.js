@@ -21,7 +21,7 @@ async function load() {
     const holidayCals = state.calendars.filter(isHolidayCal);
     // メモのカレンダーは、表示を切っていても読む
     const targets = state.calendars.filter((c) => !state.hidden.has(c.id) || isHolidayCal(c) || c.id === memoCalId());
-    const tasksP = state.tasksOk ? fetchTasks().catch((err) => { if (err.scope) state.tasksOk = false; else if (err.auth) throw err; else console.error(err); return state.tasks; }) : Promise.resolve([]);
+    const tasksP = state.tasksOk ? fetchTasks().catch((err) => { if (err.scope) state.tasksOk = false; else if (err.auth) throw err; else console.error(err && err.message ? err.message : String(err)); return state.tasks; }) : Promise.resolve([]);
     const [lists, tasks] = await Promise.all([Promise.all(targets.map((c) => fetchEvents(c, s, e))), tasksP]);
     if (id !== state.reqId) return;
     const hol = new Map();
@@ -40,7 +40,7 @@ async function load() {
   } catch (err) {
     if (id !== state.reqId) return;
     if (err && err.auth) { handleError(err); return; }
-    console.warn(err);
+    console.warn(err && err.message ? err.message : String(err));
     if (!loadCached()) toast('読み込めませんでした。通信を確認してください');
   } finally {
     if (id === state.reqId) $('#view').classList.remove('loading');
@@ -122,11 +122,22 @@ async function api(path, method = 'GET', body, retried) {
   await ensureFreshToken();
   const opt = { method, headers: { Authorization: `Bearer ${state.token}` } };
   if (body) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
-  const r = await fetch(path.startsWith('http') ? path : API + path, opt);
+  const service = path.includes('tasks.googleapis') ? 'Google ToDo' : 'Googleカレンダー';
+  let r;
+  try { r = await fetch(path.startsWith('http') ? path : API + path, opt); }
+  catch { throw new Error(`${service}との通信に失敗しました（${method}）。Wi-Fi・モバイル通信を確認してください`); }
   if (r.status === 401 && NATIVE && !retried) { store.del('token'); return api(path, method, body, true); } // 期限前に切れたときは一度つなぎ直す
   if (r.status === 401) throw Object.assign(new Error('auth'), { auth: true });
   if (r.status === 403 && path.includes('tasks.googleapis')) throw Object.assign(new Error('ToDoリストの許可がありません'), { scope: true });
-  if (!r.ok) throw new Error(`Google APIエラー（${r.status}）`);
+  if (!r.ok) {
+    let reason = '';
+    try {
+      const data = await r.json();
+      const code = data.error?.errors?.[0]?.reason || data.error?.status;
+      if (typeof code === 'string' && /^[A-Za-z_]{1,80}$/.test(code)) reason = `・${code}`;
+    } catch {}
+    throw new Error(`${service} APIエラー（${method}・${r.status}${reason}）`);
+  }
   return r.status === 204 ? null : r.json();
 }
 
