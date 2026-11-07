@@ -6,7 +6,7 @@ const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate(
 const minToHM = (m) => `${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`;
 const hmToMin = (s) => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
 const REMINDS = [
-  { v: '', label: '通知なし' }, { v: '10', label: '10分前' }, { v: '30', label: '30分前' },
+  { v: '', label: '通知なし' }, { v: '0', label: '開始時刻' }, { v: '10', label: '10分前' }, { v: '30', label: '30分前' },
   { v: '60', label: '1時間前' }, { v: '120', label: '2時間前' }, { v: 'prevday', label: '前の日' },
 ];
 const minLabel = (m) => (m % 1440 === 0 ? `${m / 1440}日前` : m % 60 === 0 ? `${m / 60}時間前` : `${m}分前`);

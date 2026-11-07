@@ -179,13 +179,20 @@ function localNotifySync(ask) {
     const items = localNotifyItems();
     let { status } = await KoeLocal.notifyStatus();
     if (status === 'undecided' && ask && items.length) ({ status } = await KoeLocal.notifyRequest());
-    if (status === 'allowed') { await KoeLocal.notifySchedule({ items }); return; }
+    if (status === 'allowed') {
+      const { count } = await KoeLocal.notifySchedule({ items });
+      if (count !== items.length) throw new Error('予定は保存しましたが、一部の通知を予約できませんでした');
+      return;
+    }
     if (status === 'denied' && ask && items.length && !notifyWarned) {
       notifyWarned = true;
       toast('通知が許可されていないため鳴りません。設定アプリで許可できます');
     }
   };
-  notifyChain = notifyChain.then(run, run).catch((err) => console.warn(err));
+  notifyChain = notifyChain.then(run, run).catch((err) => {
+    console.warn(err);
+    if (ask) toast(err.message || '予定は保存しましたが、通知を予約できませんでした');
+  });
   return notifyChain;
 }
 

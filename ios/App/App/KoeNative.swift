@@ -627,6 +627,7 @@ public class KoeLocalPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "notifyStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "notifyRequest", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "notifySchedule", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "notifyTest", returnType: CAPPluginReturnPromise),
     ]
     private let keepDays = 7
     private let notifyPrefix = "koe-local-"
@@ -644,7 +645,9 @@ public class KoeLocalPlugin: CAPPlugin, CAPBridgedPlugin {
         center.getNotificationSettings { settings in
             center.getPendingNotificationRequests { pending in
                 call.resolve(["status": self.notifyLabel(settings.authorizationStatus),
-                              "pending": pending.filter { $0.identifier.hasPrefix(self.notifyPrefix) }.count])
+                              "pending": pending.filter { $0.identifier.hasPrefix(self.notifyPrefix) }.count,
+                              "sound": settings.soundSetting == .enabled,
+                              "alert": settings.alertSetting == .enabled])
             }
         }
     }
@@ -656,6 +659,19 @@ public class KoeLocalPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    @objc func notifyTest(_ call: CAPPluginCall) {
+        let content = UNMutableNotificationContent()
+        content.title = "Koeのテスト通知"
+        content.body = "通知が届きました。予定には、別途通知時刻を設定してください。"
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: "koe-notification-test", content: content,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false))
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error { call.reject("テスト通知を予約できませんでした：\(error.localizedDescription)"); return }
+            call.resolve()
+        }
+    }
+
     // いつも全部を入れ替える。消した予定や変えた時刻の通知が残らないようにする
     @objc func notifySchedule(_ call: CAPPluginCall) {
         let center = UNUserNotificationCenter.current()
@@ -664,6 +680,7 @@ public class KoeLocalPlugin: CAPPlugin, CAPBridgedPlugin {
             center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier).filter { $0.hasPrefix(self.notifyPrefix) })
             let group = DispatchGroup()
             var added = 0
+            var failure: String?
             let lock = NSLock()
             for case let item as JSObject in items {
                 guard let id = item["id"] as? String, let title = item["title"] as? String, let at = (item["at"] as? NSNumber)?.doubleValue else { continue }
@@ -676,11 +693,16 @@ public class KoeLocalPlugin: CAPPlugin, CAPBridgedPlugin {
                 let trigger = UNTimeIntervalNotificationTrigger(timeInterval: wait, repeats: false)
                 group.enter()
                 center.add(UNNotificationRequest(identifier: self.notifyPrefix + id, content: content, trigger: trigger)) { err in
-                    if err == nil { lock.lock(); added += 1; lock.unlock() }
+                    lock.lock()
+                    if let err = err { failure = err.localizedDescription } else { added += 1 }
+                    lock.unlock()
                     group.leave()
                 }
             }
-            group.notify(queue: .main) { call.resolve(["count": added]) }
+            group.notify(queue: .main) {
+                if let failure = failure { call.reject("予定は保存しましたが、通知を予約できませんでした：\(failure)"); return }
+                call.resolve(["count": added])
+            }
         }
     }
 

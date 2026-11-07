@@ -177,6 +177,14 @@ function eventBody(v) {
   return { body, startDate: v.allDay ? v.date : at(v.start), endDate: v.allDay ? addDays(v.date, v.spanDays || 1) : at(endMin) };
 }
 
+// PATCHは入れ子の値も残るため、日付と時刻を切り替える際は旧形式を明示的に消す。
+function clearUnusedEventTimes(body) {
+  for (const time of [body.start, body.end]) {
+    if (time.date) { time.dateTime = null; time.timeZone = null; }
+    else time.date = null;
+  }
+}
+
 // 登録して、取り消す処理を返す
 async function insertEvent(v) {
   if (state.local) return insertLocal(v);
@@ -245,12 +253,14 @@ async function updateEvent(ev, v, scope = 'this') {
     if (v.recurChanged && v.recur.freq === 'WEEKLY') { while (!v.recur.days.includes(masterDate.getDay())) masterDate = addDays(masterDate, 1); }
     if (v.recurChanged && v.recur.freq === 'WEEKDAYS') { while (masterDate.getDay() === 0 || masterDate.getDay() === 6) masterDate = addDays(masterDate, 1); }
     const b = eventBody({ ...v, recur: null, date: masterDate }).body;
+    clearUnusedEventTimes(b);
     if (keepReminders) delete b.reminders;
     if (v.recurChanged) b.recurrence = [window.KoeParse.recurRule(v.recur, masterDate, v.allDay), ...(master.recurrence || []).filter((l) => !/^RRULE:/.test(l))];
     await api(evPath(ev.calId, ev.masterId), 'PATCH', b);
     if (v.calId !== ev.calId) await api(`${evPath(ev.calId, ev.masterId)}/move?destination=${encodeURIComponent(v.calId)}`, 'POST');
     return;
   }
+  clearUnusedEventTimes(body);
   await api(evPath(ev.calId, ev.id), 'PATCH', body);
   if (v.calId !== ev.calId) await api(`${evPath(ev.calId, ev.id)}/move?destination=${encodeURIComponent(v.calId)}`, 'POST');
 }

@@ -14,6 +14,7 @@ function render() {
   if (keepScroll) state.scrollTop = keepScroll.scrollTop;
   v.innerHTML = '';
   renderTasks();
+  clearInterval(todayCountdownTimer);
   if (state.view === 'month') { v.appendChild(renderMonth()); monthFill(); return; }
   if (state.view === 'today') { v.appendChild(renderToday()); return; }
   if (state.view === 'day') v.appendChild(memoBar(state.anchor));
@@ -147,6 +148,22 @@ function weekToggle() {
 
 // 週の一覧表示：1日1行で予定名を全部読める
 // 今日の画面：今の予定と次の予定、今日のタスク、明日の予定
+let todayCountdownTimer = null;
+function todayCountdownHTML(events, now) {
+  const timed = events.filter((e) => !e.allDay && !e.diary && !e.transparent && e.end > now)
+    .sort((a, b) => a.start - b.start);
+  const current = timed.filter((e) => e.start <= now);
+  const next = timed.find((e) => e.start > now && sameDay(e.start, now));
+  const left = (date) => {
+    const seconds = Math.max(0, Math.ceil((date - now) / 1000));
+    const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds % 3600 / 60);
+    return `${hours ? `${hours}時間` : ''}${minutes || hours ? `${minutes}分` : ''}${seconds % 60}秒`;
+  };
+  return current.map((e) => `<div><b>進行中</b> ${esc(e.title)}（${hm(e.end)}まで・あと${left(e.end)}）</div>`).join('')
+    + (next ? `<div><b>次の予定</b> ${hm(next.start)} ${esc(next.title)}<strong class="td-countdown">あと${left(next.start)}</strong></div>`
+      : '<div class="td-no-next">今日このあとの時間指定の予定はありません</div>');
+}
+
 function renderToday() {
   const now = new Date(), today = startOfDay(now), tomorrow = addDays(today, 1);
   const root = el('div', 'td');
@@ -177,14 +194,16 @@ function renderToday() {
   };
   // 次の予定
   const todays = list(today);
-  const cur = todays.find((e) => !e.allDay && e.start <= now && e.end > now);
-  const next = todays.find((e) => !e.allDay && e.start > now);
-  if (cur || next) {
+  if (cfg('todayCountdown', false)) {
     const box = el('div', 'td-next');
-    const mins = next ? Math.round((next.start - now) / 60000) : 0;
-    const left = mins >= 60 ? `${Math.floor(mins / 60)}時間${mins % 60 ? `${mins % 60}分` : ''}` : `${mins}分`;
-    box.innerHTML = `${cur ? `<div><b>今</b> ${esc(cur.title)}（${hm(cur.end)}まで）</div>` : ''}${next ? `<div><b>次</b> ${hm(next.start)} ${esc(next.title)}（あと${left}）</div>` : ''}`;
+    box.id = 'today-countdown';
     root.appendChild(box);
+    const refreshCountdown = () => {
+      if (!sameDay(new Date(), today)) { onResume(); return; }
+      box.innerHTML = todayCountdownHTML(list(today), new Date());
+    };
+    refreshCountdown();
+    todayCountdownTimer = setInterval(refreshCountdown, 1000);
   }
   root.appendChild(memoBar(today));
   const hol = state.holidays.get(ymd(today));
@@ -484,7 +503,7 @@ function fillMonthCell(cell, evs, d, body, s) {
     cell.appendChild(more);
   };
   if (lines.length < evs.length) showMore();
-  const bottom = cell.getBoundingClientRect().bottom - 1;
+  const bottom = cell.getBoundingClientRect().top + cell.clientTop + cell.clientHeight - parseFloat(getComputedStyle(cell).paddingBottom || 0);
   const over = () => cell.lastElementChild.getBoundingClientRect().bottom > bottom;
   if (lines.length && over()) {
     if (!more.isConnected) showMore(); // 「ほか」の行の分も空ける
@@ -629,8 +648,13 @@ function openDayPop(d, cell) {
   $('#app').append(bg, pop);
   // 押したマスの下（入らなければ上）に出し、三角をマスに向ける
   const cr = cell.getBoundingClientRect(), ar = $('#app').getBoundingClientRect();
-  const ph = pop.offsetHeight, below = cr.bottom + 10 + ph < window.innerHeight - 90;
-  pop.style.top = `${(below ? cr.bottom + 10 : cr.top - 10 - ph) - ar.top}px`;
+  const viewport = window.visualViewport;
+  const topEdge = Math.max(ar.top, viewport ? viewport.offsetTop : 0) + 12;
+  const bottomEdge = Math.min(ar.bottom, viewport ? viewport.offsetTop + viewport.height : window.innerHeight) - 12;
+  pop.style.maxHeight = `${Math.max(0, Math.min((viewport ? viewport.height : window.innerHeight) * 0.55, bottomEdge - topEdge))}px`;
+  const ph = pop.offsetHeight, below = cr.bottom + 10 + ph <= bottomEdge;
+  const wantedTop = below ? cr.bottom + 10 : cr.top - 10 - ph;
+  pop.style.top = `${Math.max(topEdge, Math.min(wantedTop, bottomEdge - ph)) - ar.top}px`;
   pop.classList.add(below ? 'down' : 'up');
   const cx = cr.left + cr.width / 2 - ar.left;
   const px = Math.min(Math.max(cx - pop.offsetWidth / 2, 10), ar.width - pop.offsetWidth - 10);

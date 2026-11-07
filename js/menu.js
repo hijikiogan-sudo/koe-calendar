@@ -212,6 +212,7 @@ function openMenu() {
       ${row('1時間の高さ', sel('hourH', 60, [[48, '低い'], [60, '標準'], [76, '高い'], [96, 'とても高い']]))}
       ${row('週の始まり', sel('weekStart', 0, [[0, '日曜'], [1, '月曜']]))}
       ${row('最初に見せる時刻', sel('startHour', 'now', [['now', '今の時刻の近く'], [6, '6時'], [7, '7時'], [8, '8時'], [9, '9時']]))}
+      ${row('今日の予定のカウントダウン', sel('todayCountdown', false, [['false', 'オフ'], ['true', 'オン']]))}
       ${row('六曜を表示', sel('rokuyo', false, [['false', '表示しない'], ['true', '表示する']]))}
       ${row('月の1マスの件数', sel('monthMax', 3, [[2, '2件'], [3, '3件'], [4, '4件'], [5, '5件']]))}`)}
     ${group('cal', 'カレンダーと色', cals)}
@@ -232,6 +233,10 @@ function openMenu() {
         <button>追加</button>
       </form>
       <p class="note" style="margin-top:6px">iPhoneは「たかし」を「隆」などの漢字で書き起こします。確認画面に出た字を登録してください。「、」で区切ると複数まとめて登録できます。Google ToDoの「Koe設定」リストを使って、iPhoneとパソコンで共有します。</p>`)}
+    ${group('notifications', '通知の確認', `
+      <p class="note">${state.local ? '通知を設定した予定を、このiPhoneに予約します。' : state.apple ? '予定の通知はAppleカレンダーが届けます。iPhoneの設定で「カレンダー」の通知とサウンドを確認してください。' : '予定の通知はGoogleカレンダーが届けます。iPhoneのGoogleカレンダーアプリで同じアカウントを使い、通知を許可してください。Koeからのプッシュ通知は行っていません。'}</p>
+      <p class="note">「通知なし」の予定は鳴りません。通知時刻を過ぎてから設定した通知は、さかのぼって鳴りません。</p>
+      ${NATIVE ? '<p class="note" id="m-notify-status">通知の状態を確認中…</p><button class="act" id="m-notify-test">Koeのテスト通知（5秒後）</button><p class="note">テストはKoe自体の通知を確認します。Google・Appleカレンダーからの通知は、それぞれのアプリの通知設定で確認してください。届かない場合は、設定アプリの「通知」、集中モード、サイレントモードを確認してください。</p>' : '<p class="note">このWeb版は、閉じた状態や画面をロックした状態でKoeから通知できません。Googleカレンダーアプリの通知を利用してください。</p>'}`)}
     ${MOUSE.matches ? group('keys', 'キーボード操作', KEY_HELP) : ''}
     ${group('sync', '同期とアカウント', `
       <p class="note" style="margin-top:0">${state.local ? 'Koeの中だけに保存しています。通知はこの端末で鳴ります。アプリを消すと中身も消えるので、ときどき書き出して、別の場所に置いてください。' : state.apple ? 'Appleカレンダーを使っています。ここでの登録・変更・削除はAppleカレンダーとリマインダーに入ります。' : state.demo ? 'お試し表示中です。' : state.token ? 'Googleに接続中です。開いたときと、アプリに戻ったときに自動で更新します。' : 'Googleとの接続が切れています。'}</p>
@@ -250,10 +255,10 @@ function openMenu() {
   sh.querySelectorAll('select.cfg').forEach((x) => x.onchange = () => {
     const k = x.dataset.k;
     if (state.offGoogle && APPLE_KEEP.includes(k)) { toast('この表示では、この設定は保存しません'); return; }
-    const v = ['weekStart', 'monthMax', 'hourH'].includes(k) ? Number(x.value) : k === 'rokuyo' ? x.value === 'true' : x.value;
+    const v = ['weekStart', 'monthMax', 'hourH'].includes(k) ? Number(x.value) : ['rokuyo', 'todayCountdown'].includes(k) ? x.value === 'true' : x.value;
     setCfg(k, v);
     if (k === 'textSize' || k === 'hourH') applyTheme();
-    if (['weekStart', 'monthMax', 'startHour', 'hourH', 'weekStyle', 'rokuyo'].includes(k)) { state.scrollTop = null; load(); }
+    if (['weekStart', 'monthMax', 'startHour', 'hourH', 'weekStyle', 'rokuyo', 'todayCountdown'].includes(k)) { state.scrollTop = null; load(); }
   });
   sh.querySelectorAll('.swatches button').forEach((b) => b.onclick = () => {
     const id = b.parentElement.dataset.id, cur = cfg('calColors', {});
@@ -299,6 +304,30 @@ function openMenu() {
     await run; showCorpus();
     toast(corpusStatus || '更新しました');
   };
+  const testNotify = $('#m-notify-test');
+  if (testNotify) {
+    const statusBox = $('#m-notify-status');
+    const showNotifyStatus = async () => {
+      const result = await KoeLocal.notifyStatus();
+      if (!statusBox.isConnected) return result;
+      statusBox.textContent = `Koeの通知：${({ allowed: '許可済み', denied: '許可されていません。設定アプリの「通知」→「Koe」で許可してください', undecided: 'まだ許可していません' })[result.status] || '確認できません'}${result.status === 'allowed' ? ` ／ バナー：${result.alert ? 'オン' : 'オフ'} ／ サウンド：${result.sound ? 'オン' : 'オフ'} ／ 予定の予約：${result.pending}件` : ''}`;
+      return result;
+    };
+    showNotifyStatus().catch(() => { if (statusBox.isConnected) statusBox.textContent = '通知の状態を取得できませんでした。最新版のアプリが必要です'; });
+    testNotify.onclick = async () => {
+      testNotify.disabled = true;
+      try {
+        let { status } = await KoeLocal.notifyStatus();
+        if (status === 'undecided') ({ status } = await KoeLocal.notifyRequest());
+        if (status !== 'allowed') { await showNotifyStatus(); toast('設定アプリの「通知」→「Koe」で通知を許可してください'); return; }
+        await KoeLocal.notifyTest();
+        if (state.local) await localNotifySync(false);
+        await showNotifyStatus();
+        toast('5秒後にテスト通知を出します');
+      } catch (err) { toast(err.message || 'テスト通知を予約できませんでした'); }
+      finally { testNotify.disabled = false; }
+    };
+  }
   const mm = $('#m-mode'); if (mm) mm.onclick = openModeSheet;
   const ex = $('#m-export'); if (ex) ex.onclick = exportLocal;
   const im = $('#m-import'); if (im) im.onchange = () => { if (im.files[0]) importLocal(im.files[0]); };

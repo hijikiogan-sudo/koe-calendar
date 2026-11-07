@@ -304,7 +304,8 @@ body{-webkit-font-smoothing:antialiased;letter-spacing:.01em}
 .dp-head b{flex:1;text-align:center;font-family:var(--font-head);font-size:18px}
 .dp-head span{font-size:13px;color:var(--muted);font-weight:600}
 .dp-close{color:var(--link);font-size:15px;font-weight:600}
-.dp-list{list-style:none;margin:0;padding:0 8px;overflow-y:auto}
+.dp-list{list-style:none;margin:0;padding:0 8px;overflow-y:auto;min-height:0;overscroll-behavior:contain}
+.dp-head,.dp-memo,.dp-acts{flex-shrink:0}
 .dp-list li{display:flex;align-items:center;gap:12px;padding:11px 8px;border-bottom:1px solid var(--line2);cursor:pointer}
 .dp-list li:active{background:var(--soft)}
 .dp-time{width:44px;flex:none;text-align:right;font-size:13px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
@@ -486,3 +487,6 @@ body.is-dragging{overflow:hidden;touch-action:none}
 #btn-show{position:relative}
 #btn-show.on::after{content:"";position:absolute;top:7px;right:6px;width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--head-bg,var(--bg))}
 .sheet .cal[data-list].on i::after{color:var(--on-accent)}
+
+.td-countdown{display:block;font-size:20px;font-variant-numeric:tabular-nums;color:var(--fg)}
+.td-next{overflow-wrap:anywhere}.td-next b{margin-right:6px}.td-no-next{color:var(--muted);font-size:13px}
