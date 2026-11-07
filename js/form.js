@@ -38,6 +38,21 @@ function recurText(r, d) {
 const writableCals = () => state.calendars.filter((c) => c.writable);
 const noWriteMsg = () => '書き込めるカレンダーがありません';
 
+// 画面に出した開始・終了日時と、保存する期間を一致させる。翌日には自動変更しない。
+function formScheduleRange(date, endDate, start, end, allDay) {
+  const a = parseYMD(date), b = parseYMD(endDate);
+  const days = Math.round((b - a) / 86400000);
+  if (isNaN(a) || isNaN(b)) return { valid: false, summary: '開始日と終了日を入力してください' };
+  if (days < 0) return { valid: false, summary: '終了日が開始日より前になっています' };
+  const from = hmToMin(start), to = days * 1440 + hmToMin(end);
+  if (!allDay && (!start || !end || !Number.isFinite(from) || !Number.isFinite(to))) return { valid: false, summary: '開始時刻と終了時刻を入力してください' };
+  if (!allDay && to <= from) return { valid: false, summary: '終了日時は開始日時より後にしてください。日をまたぐ場合は終了日を変更してください' };
+  const label = (d) => `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+  const min = to - from, hours = Math.floor(min / 60), minutes = min % 60;
+  const duration = allDay ? `${days + 1}日間・終日` : `${hours ? `${hours}時間` : ''}${minutes ? `${minutes}分` : ''}`;
+  return { valid: true, days, summary: `開始 ${label(a)}${allDay ? '' : ` ${start}`} → 終了 ${label(b)}${allDay ? '' : ` ${end}`}（${days === 1 ? '翌日・' : days > 1 ? `${days}日後・` : '同日・'}${duration}）` };
+}
+
 // v: {kind,calId,title,date,noDue,allDay,start,end,location,remind,spanDays}
 // opt: {heading, heard, okLabel, busyLabel, changed:Set, keepRemind, fixedKind, onOk(v)}
 function openForm(v, opt) {
@@ -49,7 +64,7 @@ function openForm(v, opt) {
   const end = v.allDay || v.end == null ? 10 * 60 : v.end;
   const ch = (k) => (opt.changed && opt.changed.has(k) ? ' changed' : '');
   let kind = v.kind || 'event';
-  const hasEnd = v.spanDays > 1 || v.endDays > 0;
+
 
   openSheet(`
     <h2>${opt.heading}</h2>
@@ -71,16 +86,15 @@ function openForm(v, opt) {
       <input id="c-date" type="date" value="${ymd(v.date || startOfDay(new Date()))}" ${v.noDue ? 'disabled' : ''}>
       <label class="sw task-only"><input id="c-nodue" type="checkbox" ${v.noDue ? 'checked' : ''}>期限なし</label>
     </div></div>
-    <div class="f ev-only${ch('time')}"><span class="fl">時間</span><div class="trow">
-      <label class="sw"><input id="c-allday" type="checkbox" ${v.allDay ? 'checked' : ''}>終日</label>
-      <input id="c-start" type="time" value="${minToHM(start)}" ${v.allDay ? 'disabled' : ''}>
-      <span>〜</span>
-      <input id="c-end" type="time" value="${minToHM(end)}" ${v.allDay ? 'disabled' : ''}>
-    </div></div>
+    <div class="f ev-only${ch('time')}"><span class="fl">終日</span><label class="sw"><input id="c-allday" type="checkbox" ${v.allDay ? 'checked' : ''}>時刻を指定しない</label></div>
+    <label class="f ev-only${ch('time')}"><span class="fl">開始時刻</span><input id="c-start" type="time" value="${minToHM(start)}" ${v.allDay ? 'disabled' : ''}></label>
+    <div class="f ev-only" id="c-endrow"><span class="fl">終了日</span><input id="c-enddate" type="date" value="${ymd(addDays(v.date || startOfDay(new Date()), v.allDay ? (v.spanDays || 1) - 1 : v.endDays || 0))}"></div>
+    ${!opt.lockDate ? '<button type="button" class="link ev-only" id="c-sameday">終了日を開始日と同じにする</button>' : ''}
+    <label class="f ev-only${ch('time')}"><span class="fl">終了時刻</span><input id="c-end" type="time" value="${minToHM(end)}" ${v.allDay ? 'disabled' : ''}></label>
+    <div class="schedule-summary ev-only" id="c-schedule-summary"></div>
     <div class="conflict ev-only" id="c-conflict" hidden></div>
-    <div class="f ev-only" id="c-endrow" ${hasEnd ? '' : 'hidden'}><span class="fl">終わりの日</span><input id="c-enddate" type="date" value="${ymd(addDays(v.date || startOfDay(new Date()), v.allDay ? (v.spanDays || 1) - 1 : v.endDays || 0))}"></div>
     ${opt.recurLocked ? '<p class="note ev-only" style="margin:4px 0 0">この繰り返しは複雑な指定なので、規則の変更はGoogleカレンダーで行ってください。</p>' : ''}
-    ${opt.lockDate ? '<p class="note ev-only" style="margin:4px 0 0">この範囲では開始日を変えられません。時間・内容・場所・通知・繰り返しの規則は変えられます。</p>' : `<button type="button" class="link ev-only" id="c-endadd" style="margin-top:6px" ${hasEnd ? 'hidden' : ''}>＋ 別の日に終わる</button>`}
+    ${opt.lockDate ? '<p class="note ev-only" style="margin:4px 0 0">この範囲では開始日を変えられません。時間・内容・場所・通知・繰り返しの規則は変えられます。</p>' : ''}
     ${opt.allowRecur ? `<label class="f ev-only"><span class="fl">繰り返し</span><select id="c-recur">${RECURS.filter((r) => !opt.recurRequired || r.v).map((r) => `<option value="${r.v}" ${r.v === ((v.recur && v.recur.freq) || '') ? 'selected' : ''}>${r.label}</option>`).join('')}</select></label>
     <div class="ev-only" id="c-rbox" hidden>
       <div class="f" id="c-rint-row"><span class="fl">間隔</span><div class="trow"><input id="c-rint" type="number" inputmode="numeric" min="1" max="99" value="${(v.recur && v.recur.interval) || 1}"><span id="c-rint-unit" class="runit"></span></div></div>
@@ -105,7 +119,7 @@ function openForm(v, opt) {
     sh.classList.toggle('as-task', k === 'task');
     sh.querySelectorAll('.kind-seg button').forEach((b) => b.classList.toggle('on', b.dataset.k === k));
     $('#c-kind-note').textContent = state.local ? 'Koeの中に保存します' : k === 'task' ? (state.apple ? 'Appleのリマインダーに入ります' : 'Google ToDoリストに入ります') : state.apple ? 'Appleカレンダーに入ります' : 'Googleカレンダーに入ります';
-    $('#c-date-l').textContent = k === 'task' ? '期限' : '日付';
+    $('#c-date-l').textContent = k === 'task' ? '期限' : '開始日';
     $('#c-date').disabled = k === 'task' && $('#c-nodue').checked;
   };
   sh.querySelectorAll('.kind-seg button').forEach((b) => b.onclick = () => setKind(b.dataset.k));
@@ -125,7 +139,6 @@ function openForm(v, opt) {
   });
   if (opt.lockDate) { ['c-date', 'c-enddate', 'c-allday'].forEach((id) => { $('#' + id).disabled = true; }); }
   if (opt.lockCal) sh.querySelectorAll('.cc:not(.lc)').forEach((b) => { b.disabled = true; b.style.opacity = b.classList.contains('on') ? 1 : .35; });
-  if ($('#c-endadd')) $('#c-endadd').onclick = () => { $('#c-endrow').hidden = false; $('#c-endadd').hidden = true; };
   // 同じ時間の予定があれば知らせる（登録は止めない）
   const dayCache = new Map();
   let conflictSeq = 0;
@@ -139,7 +152,7 @@ function openForm(v, opt) {
     const endVal = parseYMD($('#c-enddate').value);
     const diff = $('#c-endrow').hidden || isNaN(endVal) ? 0 : Math.round((endVal - d) / 86400000);
     endMin += diff * 1440;
-    if (endMin <= startMin) endMin += 1440;
+    if (diff < 0 || endMin <= startMin) { box.hidden = true; return; }
     const from = new Date(d); from.setMinutes(startMin);
     const to = new Date(d); to.setMinutes(endMin);
     const key = `${ymd(d)}|${diff}`;
@@ -230,10 +243,19 @@ function openForm(v, opt) {
   });
   $('#c-nodue').onchange = (e) => { $('#c-date').disabled = e.target.checked; };
   $('#c-allday').onchange = (e) => { $('#c-start').disabled = $('#c-end').disabled = e.target.checked; };
-  $('#c-start').onchange = () => { // 開始を動かしたら長さを保って終わりも動かす
-    if (!$('#c-endrow').hidden) return; // 日をまたぐ予定は終わりの日時を動かさない
-    const s = hmToMin($('#c-start').value);
-    $('#c-end').value = minToHM(s + Math.max(end - start, 30));
+  const updateScheduleSummary = () => {
+    const result = formScheduleRange($('#c-date').value, $('#c-enddate').value, $('#c-start').value, $('#c-end').value, $('#c-allday').checked);
+    $('#c-schedule-summary').textContent = result.summary;
+    $('#c-schedule-summary').classList.toggle('invalid', !result.valid);
+  };
+  ['c-date', 'c-enddate', 'c-start', 'c-end', 'c-allday'].forEach((id) => {
+    $('#' + id).addEventListener('input', updateScheduleSummary);
+    $('#' + id).addEventListener('change', updateScheduleSummary);
+  });
+  updateScheduleSummary();
+  if ($('#c-sameday')) $('#c-sameday').onclick = () => {
+    $('#c-enddate').value = $('#c-date').value;
+    updateScheduleSummary(); checkConflict();
   };
   $('#c-cancel').onclick = closeSheet;
   $('#c-ok').onclick = async () => {
@@ -257,9 +279,9 @@ function openForm(v, opt) {
     };
     if (!out.noDue && isNaN(out.date)) { toast('日付を入れてください'); return; }
     if (kind === 'event' && !isNaN(out.date)) {
-      const endVal = parseYMD($('#c-enddate').value);
-      const diff = $('#c-endrow').hidden || isNaN(endVal) ? 0 : Math.round((endVal - out.date) / 86400000);
-      if (diff < 0) { toast('終わりの日が開始より前になっています'); return; }
+      const range = formScheduleRange($('#c-date').value, $('#c-enddate').value, $('#c-start').value, $('#c-end').value, out.allDay);
+      if (!range.valid) { toast(range.summary); return; }
+      const diff = range.days;
       out.spanDays = out.allDay ? diff + 1 : 1;
       out.endDays = out.allDay ? 0 : diff;
       out.recur = readRecur();

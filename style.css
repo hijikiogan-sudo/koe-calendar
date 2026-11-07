@@ -490,3 +490,6 @@ body.is-dragging{overflow:hidden;touch-action:none}
 
 .td-countdown{display:block;font-size:20px;font-variant-numeric:tabular-nums;color:var(--fg)}
 .td-next{overflow-wrap:anywhere}.td-next b{margin-right:6px}.td-no-next{color:var(--muted);font-size:13px}
+
+.schedule-summary{padding:10px 12px;border-radius:10px;background:var(--accent-ring);font-size:14px;line-height:1.6;font-weight:700;white-space:normal;overflow-wrap:anywhere}
+.schedule-summary.invalid{color:var(--danger,#c04444);background:var(--soft)}
