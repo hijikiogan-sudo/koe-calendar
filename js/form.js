@@ -91,6 +91,7 @@ function openForm(v, opt) {
     </div>` : ''}
     ${!opt.fixedKind && state.taskLists.length > 1 ? `<div class="f task-only"><span class="fl">リスト</span><div class="cal-chips">${state.taskLists.map((l) => `<button type="button" class="cc lc${l.id === defaultList(v.listId) ? ' on' : ''}" data-id="${esc(l.id)}" style="--c:var(--task);--ct:var(--on-task)">${esc(l.title)}</button>`).join('')}</div></div>` : ''}
     <label class="f ev-only${ch('location')}"><span class="fl">場所</span><input id="c-loc" value="${esc(v.location || '')}" placeholder="なし"></label>
+    <label class="f ev-only"><span class="fl">詳細・メモ</span><textarea id="c-description" class="memo-input" rows="4" placeholder="持ち物、連絡事項、URLなど">${esc(v.description || '')}</textarea></label>
     <div class="sugg ev-only" id="s-loc" hidden></div>
     ${opt.quick ? '<div class="sugg ev-only" id="s-lquick" hidden></div>' : ''}
     <label class="f ev-only${ch('remind')}"><span class="fl">通知</span><select id="c-remind">${reminds.map((r) =>
@@ -242,6 +243,7 @@ function openForm(v, opt) {
       calId,
       title: $('#c-title').value.trim(),
       location: $('#c-loc').value.trim(),
+      description: $('#c-description').value,
       date: parseYMD($('#c-date').value),
       noDue: kind === 'task' && $('#c-nodue').checked,
       allDay: $('#c-allday').checked,

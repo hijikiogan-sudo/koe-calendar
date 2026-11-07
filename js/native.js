@@ -207,7 +207,7 @@ async function insertApple(v, body, startDate, endDate) {
 }
 async function updateApple(ev, v, body, startDate, endDate, scope) {
   await KoeCalendar.save({
-    id: ev.appleId, occurrence: ev.appleStart, scope, calId: v.calId, title: v.title, location: v.location || '', allDay: !!v.allDay,
+    id: ev.appleId, occurrence: ev.appleStart, scope, calId: v.calId, title: v.title, location: v.location || '', notes: v.description, allDay: !!v.allDay,
     start: startDate.getTime(), end: endDate.getTime(), alarms: appleAlarms(body),
   }).catch(appleFail);
 }

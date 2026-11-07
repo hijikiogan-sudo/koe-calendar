@@ -90,7 +90,7 @@ function eventToForm(ev) {
   if (state.demo) remind = ev.remind || '';
   const start = ev.allDay ? 9 * 60 : ev.start.getHours() * 60 + ev.start.getMinutes();
   return {
-    calId: ev.calId, title: ev.title, location: ev.location, date, allDay: ev.allDay,
+    calId: ev.calId, title: ev.title, location: ev.location, description: ev.description || '', date, allDay: ev.allDay,
     start, end: ev.allDay ? start + 60 : ev.end.getHours() * 60 + ev.end.getMinutes(),
     endDays: ev.allDay ? 0 : Math.round((startOfDay(ev.end) - date) / 86400000), // 終わりが何日後か
     remind, spanDays: ev.allDay ? Math.max(1, Math.round((startOfDay(ev.end) - date) / 86400000)) : 1,
@@ -172,7 +172,7 @@ function eventBody(v) {
     const min = v.remind === 'prevday' ? (v.allDay ? 15 * 60 : 24 * 60) : v.remind ? Number(v.remind) : null;
     body.reminders = { useDefault: false, overrides: min != null ? [{ method: 'popup', minutes: min }] : [] };
   }
-  if (v.description) body.description = v.description;
+  if (v.description !== undefined) body.description = v.description;
   if (v.recur) { const rule = window.KoeParse.recurRule(v.recur, v.date, v.allDay); if (rule) body.recurrence = [rule]; }
   return { body, startDate: v.allDay ? v.date : at(v.start), endDate: v.allDay ? addDays(v.date, v.spanDays || 1) : at(endMin) };
 }
@@ -193,7 +193,7 @@ async function insertEvent(v) {
   if (state.demo) {
     const c = state.calendars.find((x) => x.id === v.calId);
     const id = 'demo' + Date.now();
-    demoEvents().push({ id, calId: v.calId, title: v.title, location: v.location, allDay: v.allDay,
+    demoEvents().push({ id, calId: v.calId, title: v.title, location: v.location, description: v.description || '', allDay: v.allDay,
       start: startDate, end: endDate, color: c.color, remind: v.remind });
     return async () => { demoStore = demoEvents().filter((x) => x.id !== id); };
   }
@@ -211,7 +211,7 @@ async function updateEvent(ev, v, scope = 'this') {
   if (state.demo) {
     const x = demoEvents().find((e) => e.id === ev.id);
     const c = state.calendars.find((k) => k.id === v.calId);
-    Object.assign(x, { calId: v.calId, title: v.title, location: v.location, allDay: v.allDay, start: startDate, end: endDate,
+    Object.assign(x, { calId: v.calId, title: v.title, location: v.location, description: v.description || '', allDay: v.allDay, start: startDate, end: endDate,
       color: c.color, remind: v.remind === 'default' ? x.remind : v.remind });
     return;
   }
@@ -238,7 +238,7 @@ async function updateEvent(ev, v, scope = 'this') {
       }
       const created = await api(`/calendars/${encodeURIComponent(v.calId)}/events`, 'POST', {
         ...body, recurrence: rule.next, reminders: body.reminders || master.reminders,
-        description: master.description, colorId: master.colorId, transparency: master.transparency, visibility: master.visibility,
+        description: v.description !== undefined ? v.description : master.description, colorId: master.colorId, transparency: master.transparency, visibility: master.visibility,
       });
       try {
         await api(evPath(ev.calId, ev.masterId), 'PATCH', { recurrence: rule.old });

@@ -196,7 +196,7 @@ function openDuplicate(ev) {
   openForm(v, {
     heading: '複製して登録しますか？', busyLabel: '登録中…', fixedKind: true, keepRemind: true, allowRecur: true,
     onOk: async (out) => {
-      const undo = await insertEvent({ ...out, description: ev.description });
+      const undo = await insertEvent(out);
       noteCorpus(out);
       showUndo(`複製しました：${out.title}`, async () => { await undo(); load(); });
     },
