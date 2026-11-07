@@ -12,6 +12,7 @@ function setup() {
     addDays: (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n),
     api: async (path, method, body) => { saved.push(body); return { id: 'new' }; },
   });
+  vm.runInContext(fs.readFileSync(require.resolve('../js/core.js'), 'utf8').slice(fs.readFileSync(require.resolve('../js/core.js'), 'utf8').indexOf('function validateNotifications')), c);
   for (const f of ['native', 'local', 'edit']) vm.runInContext(fs.readFileSync(require.resolve(`../js/${f}.js`), 'utf8'), c);
   return { c, saved };
 }

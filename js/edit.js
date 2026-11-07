@@ -93,6 +93,7 @@ function eventToForm(ev) {
     calId: ev.calId, title: ev.title, location: ev.location, description: ev.description || '', date, allDay: ev.allDay,
     start, end: ev.allDay ? start + 60 : ev.end.getHours() * 60 + ev.end.getMinutes(),
     endDays: ev.allDay ? 0 : Math.round((startOfDay(ev.end) - date) / 86400000), // 終わりが何日後か
+    notificationOverrides: r && !r.useDefault ? r.overrides || [] : ev.alarms ? ev.alarms.map((minutes) => ({ method: 'popup', minutes })) : undefined,
     remind, spanDays: ev.allDay ? Math.max(1, Math.round((startOfDay(ev.end) - date) / 86400000)) : 1,
   };
 }
@@ -137,7 +138,7 @@ function openEdit(ev, text, scope = 'this', moved, master) {
       v.allDay = false; v.start = c.start; v.end = endAbs % 1440; v.endDays = Math.floor(endAbs / 1440);
       changed.add('time');
     }
-    if (c.remind) { v.remind = String(c.remind.minutes); v.remindLabel = c.remind.label; changed.add('remind'); }
+    if (c.remind) { delete v.notificationOverrides; v.remind = String(c.remind.minutes); v.remindLabel = c.remind.label; changed.add('remind'); }
   }
   openForm(v, {
     heading: ev.recurring ? `変更しますか？（${SCOPE_LABEL[scope]}）` : 'この内容に変更しますか？', heard: text, busyLabel: '変更中…', okLabel: '変更する', changed, keepRemind: true, fixedKind: true,
@@ -167,7 +168,9 @@ function eventBody(v) {
     start: v.allDay ? { date: ymd(v.date) } : { dateTime: local(at(v.start)), timeZone: tz },
     end: v.allDay ? { date: ymd(addDays(v.date, v.spanDays || 1)) } : { dateTime: local(at(endMin)), timeZone: tz },
   };
-  if (v.remind !== 'default') {
+  if (v.notificationOverrides !== undefined) {
+    body.reminders = { useDefault: false, overrides: validateNotifications(v.notificationOverrides, state.apple ? 2 : 5) };
+  } else if (v.remind !== 'default') {
     // 設計書：通知は言ったときだけ。基本は通知なし
     const min = v.remind === 'prevday' ? (v.allDay ? 15 * 60 : 24 * 60) : v.remind ? Number(v.remind) : null;
     body.reminders = { useDefault: false, overrides: min != null ? [{ method: 'popup', minutes: min }] : [] };
@@ -194,7 +197,7 @@ async function insertEvent(v) {
     const c = state.calendars.find((x) => x.id === v.calId);
     const id = 'demo' + Date.now();
     demoEvents().push({ id, calId: v.calId, title: v.title, location: v.location, description: v.description || '', allDay: v.allDay,
-      start: startDate, end: endDate, color: c.color, remind: v.remind });
+      start: startDate, end: endDate, color: c.color, reminders: body.reminders, recurring: !!v.recur, remind: v.remind });
     return async () => { demoStore = demoEvents().filter((x) => x.id !== id); };
   }
   if (!body.location) delete body.location;
@@ -212,11 +215,11 @@ async function updateEvent(ev, v, scope = 'this') {
     const x = demoEvents().find((e) => e.id === ev.id);
     const c = state.calendars.find((k) => k.id === v.calId);
     Object.assign(x, { calId: v.calId, title: v.title, location: v.location, description: v.description || '', allDay: v.allDay, start: startDate, end: endDate,
-      color: c.color, remind: v.remind === 'default' ? x.remind : v.remind });
+      color: c.color, reminders: body.reminders || x.reminders, recurring: v.recur ? true : x.recurring, remind: v.remind === 'default' ? x.remind : v.remind });
     return;
   }
   // 通知を変えていなければ Google に送らない（複数の通知やメール通知をそのまま残す）
-  const keepReminders = v.remind === 'default' || v.remind === eventToForm(ev).remind;
+  const keepReminders = v.notificationOverrides === undefined && (v.remind === 'default' || v.remind === eventToForm(ev).remind);
   if (keepReminders) delete body.reminders;
   const evPath = (cal, id) => `/calendars/${encodeURIComponent(cal)}/events/${encodeURIComponent(id)}`;
   if (scope !== 'this' && ev.masterId) {

@@ -9,7 +9,7 @@ const REMINDS = [
   { v: '', label: '通知なし' }, { v: '0', label: '開始時刻' }, { v: '10', label: '10分前' }, { v: '30', label: '30分前' },
   { v: '60', label: '1時間前' }, { v: '120', label: '2時間前' }, { v: 'prevday', label: '前の日' },
 ];
-const minLabel = (m) => (m % 1440 === 0 ? `${m / 1440}日前` : m % 60 === 0 ? `${m / 60}時間前` : `${m}分前`);
+const minLabel = (m) => (m === 0 ? '開始時刻' : m % 1440 === 0 ? `${m / 1440}日前` : m % 60 === 0 ? `${m / 60}時間前` : `${m}分前`);
 const RECURS = [
   { v: '', label: '繰り返さない' }, { v: 'DAILY', label: '毎日／○日ごと' }, { v: 'WEEKDAYS', label: '平日のみ' }, { v: 'WEEKLY', label: '毎週／○週ごと' },
   { v: 'MONTHLY', label: '毎月／○か月ごと' }, { v: 'YEARLY', label: '毎年' },
@@ -57,7 +57,10 @@ function formScheduleRange(date, endDate, start, end, allDay) {
 // opt: {heading, heard, okLabel, busyLabel, changed:Set, keepRemind, fixedKind, onOk(v)}
 function openForm(v, opt) {
   const cals = writableCals();
-  let reminds = REMINDS.slice();
+  const customItems = (v.notificationOverrides || []).map((r) => ({ ...r }));
+  const notificationLimit = state.apple ? 2 : 5;
+  const selectedReminder = customItems.length ? 'custom' : v.remind || '';
+  let reminds = [...REMINDS, { v: 'custom', label: '自由に指定・複数の通知' }];
   if (opt.keepRemind && !state.local) reminds.unshift({ v: 'default', label: opt.keepLabel || 'そのまま（カレンダーの設定）' });
   if (v.remind != null && !reminds.some((r) => r.v === v.remind)) reminds.push({ v: v.remind, label: v.remindLabel || minLabel(Number(v.remind)) });
   const start = v.allDay || v.start == null ? 9 * 60 : v.start;
@@ -109,11 +112,43 @@ function openForm(v, opt) {
     <div class="sugg ev-only" id="s-loc" hidden></div>
     ${opt.quick ? '<div class="sugg ev-only" id="s-lquick" hidden></div>' : ''}
     <label class="f ev-only${ch('remind')}"><span class="fl">通知</span><select id="c-remind">${reminds.map((r) =>
-      `<option value="${r.v}" ${r.v === (v.remind || '') ? 'selected' : ''}>${r.label}</option>`).join('')}</select></label>
+      `<option value="${r.v}" ${r.v === selectedReminder ? 'selected' : ''}>${r.label}</option>`).join('')}</select></label>
+    <div class="ev-only notification-editor" id="c-notifications" hidden>
+      <div id="c-notification-rows"></div>
+      <button type="button" class="link" id="c-notification-add">＋ 通知を追加</button>
+      <p class="note">開始時刻の何分・何時間・何日前かを指定できます（最大${notificationLimit}件・4週間前まで）。0分は開始時刻です。</p>
+    </div>
     <button class="ok" id="c-ok">${opt.okLabel || 'OK'}</button>
     <button class="act" id="c-cancel">やめる</button>`);
 
   const sh = $('#sheet');
+  const readNotificationRows = () => [...sh.querySelectorAll('.notification-row')].map((row) => ({
+    method: row.dataset.method || 'popup', minutes: Number(row.querySelector('input').value) * Number(row.querySelector('select').value),
+  }));
+  const drawNotifications = () => {
+    $('#c-notifications').hidden = $('#c-remind').value !== 'custom';
+    $('#c-notification-rows').innerHTML = customItems.map((r, i) => `<div class="notification-row" data-method="${r.method === 'email' ? 'email' : 'popup'}">
+      <input type="number" min="0" max="40320" step="1" value="${Number(r.minutes)}" aria-label="通知${i + 1}の時間" inputmode="numeric">
+      <select aria-label="通知${i + 1}の単位"><option value="1">分前</option><option value="60">時間前</option><option value="1440">日前</option><option value="10080">週間前</option></select>
+      ${r.method === 'email' ? '<span>メール</span>' : ''}<button type="button" data-remove="${i}" aria-label="通知${i + 1}を削除">削除</button></div>`).join('');
+    $('#c-notification-add').disabled = customItems.length >= notificationLimit;
+    sh.querySelectorAll('[data-remove]').forEach((button) => button.onclick = () => {
+      const rows = readNotificationRows(); rows.splice(Number(button.dataset.remove), 1);
+      customItems.splice(0, customItems.length, ...rows); drawNotifications();
+    });
+  };
+  $('#c-notification-add').onclick = () => {
+    customItems.splice(0, customItems.length, ...readNotificationRows());
+    if (customItems.length < notificationLimit) customItems.push({ method: 'popup', minutes: 10 });
+    drawNotifications();
+  };
+  $('#c-remind').onchange = () => {
+    customItems.splice(0, customItems.length, ...readNotificationRows());
+    if ($('#c-remind').value === 'custom' && !customItems.length) customItems.push({ method: 'popup', minutes: 10 });
+    drawNotifications();
+  };
+  drawNotifications();
+
   const setKind = (k) => {
     kind = k;
     sh.classList.toggle('as-task', k === 'task');
@@ -260,6 +295,12 @@ function openForm(v, opt) {
   $('#c-cancel').onclick = closeSheet;
   $('#c-ok').onclick = async () => {
     if (!$('#c-title').value.trim()) { toast('内容を入力してください'); $('#c-title').focus(); return; } // 空のままでは登録しない
+    let notificationOverrides;
+    if (kind === 'event' && $('#c-remind').value === 'custom') {
+      if ([...sh.querySelectorAll('.notification-row input')].some((input) => !input.value.trim())) { toast('通知の時間を入力してください'); return; }
+      try { notificationOverrides = validateNotifications(readNotificationRows(), notificationLimit); }
+      catch (err) { toast(err.message); return; }
+    }
     const out = {
       kind,
       calId,
@@ -272,6 +313,7 @@ function openForm(v, opt) {
       start: hmToMin($('#c-start').value || '09:00'),
       end: hmToMin($('#c-end').value || '10:00'),
       remind: $('#c-remind').value,
+      notificationOverrides,
       spanDays: v.spanDays || 1,
       endDays: v.endDays || 0,
       listId,

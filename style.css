@@ -493,3 +493,9 @@ body.is-dragging{overflow:hidden;touch-action:none}
 
 .schedule-summary{padding:10px 12px;border-radius:10px;background:var(--accent-ring);font-size:14px;line-height:1.6;font-weight:700;white-space:normal;overflow-wrap:anywhere}
 .schedule-summary.invalid{color:var(--danger,#c04444);background:var(--soft)}
+
+.notification-editor{padding:8px 0 12px}.notification-row{display:flex;gap:8px;align-items:center;margin:8px 0}
+.notification-row input{width:80px;min-width:0;flex:1}.notification-row input,.notification-row select{font:inherit;font-size:16px;padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--field);color:var(--fg)}
+.notification-row button{padding:8px;color:var(--muted)}
+.event-flags{display:inline-block;flex:none;font-family:system-ui,sans-serif;font-size:.8em;margin-right:3px;white-space:nowrap;vertical-align:baseline}
+.mc .m-ev{display:flex;align-items:center}.mc .m-ev::before{flex:none}.mc .m-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mc .event-flags{font-size:9px;line-height:1.3}

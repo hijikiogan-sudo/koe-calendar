@@ -145,7 +145,7 @@ async function fetchCalendars() {
   const data = await api('/users/me/calendarList?minAccessRole=reader');
   state.calendars = (data.items || []).map((c) => ({
     id: c.id, name: c.summaryOverride || c.summary, color: c.backgroundColor || '#2f5d8a', text: c.foregroundColor || '#fff', primary: !!c.primary,
-    writable: c.accessRole === 'owner' || c.accessRole === 'writer',
+    writable: c.accessRole === 'owner' || c.accessRole === 'writer', defaultReminders: c.defaultReminders || [],
   })).sort((a, b) => b.primary - a.primary);
   applyCalColors(state.calendars);
   if (!state.hiddenSaved) {
@@ -164,7 +164,7 @@ function mapEvent(it, cal) {
     start: allDay ? parseYMD(it.start.date) : new Date(it.start.dateTime),
     end: allDay ? parseYMD(it.end.date) : new Date(it.end.dateTime),
     color: cal.color, text: cal.text,
-    reminders: it.reminders, recurring: !!it.recurringEventId, masterId: it.recurringEventId || null,
+    reminders: it.reminders, defaultReminders: cal.defaultReminders || [], recurring: !!it.recurringEventId, masterId: it.recurringEventId || null,
     transparent: it.transparency === 'transparent', // 「空き時間」扱いの予定
   };
 }

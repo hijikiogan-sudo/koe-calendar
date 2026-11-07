@@ -126,10 +126,11 @@ function openEvent(ev) {
   }
   const canEdit = !!(cal && cal.writable && !ev.locked);
   openSheet(`
-    <h2>${esc(ev.title)}</h2>
+    <h2>${eventFlags(ev)}${esc(ev.title)}</h2>
     <div class="row"><span>日時</span><span>${when}</span></div>
     ${ev.location ? `<div class="row"><span>場所</span><span>${esc(ev.location)}</span></div>` : ''}
     <div class="row"><span>カレンダー</span><span>${esc(cal ? cal.name : '')}</span></div>
+    ${eventNotifications(ev).length ? `<div class="row"><span>通知</span><span>${eventNotifications(ev).map((r) => `${esc(minLabel(r.minutes))}${r.method === 'email' ? '（メール）' : ''}`).join('・')}</span></div>` : ''}
     ${ev.description ? `<div class="row"><span>メモ</span><span class="memo">${esc(htmlToText(ev.description))}</span></div>` : ''}
     ${canEdit ? `
       <form class="chg-bar" id="e-form">
@@ -173,7 +174,7 @@ function withScope(ev, question, next) {
 function confirmDelete(ev, scope, when) {
   const range = (ev.recurring ? `<br><b>${SCOPE_LABEL[scope]}</b>を削除します` : '') + (state.apple && ev.recurring ? '<br>あとから元に戻せません' : '');
   openSheet(`
-    <h2>${esc(ev.title)}</h2>
+    <h2>${eventFlags(ev)}${esc(ev.title)}</h2>
     <div class="e-acts"><p class="confirm-q">本当に削除しますか？<br><small>「${esc(ev.title)}」${when}${range}</small></p>
       <button class="act danger-solid" id="e-del2">削除する</button>
       <button class="act" id="e-keep">やめる</button></div>`);

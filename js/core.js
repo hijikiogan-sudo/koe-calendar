@@ -1,6 +1,6 @@
 // Koe：アプリ全体で使う入れ物、設定、日付の道具
 'use strict';
-const APP_VERSION = '202611072012'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
+const APP_VERSION = '202611080828'; // index.html の ?v= と合わせる（iPhoneに古い版が残らないように）
 const SCOPES = 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/tasks';
 const API = 'https://www.googleapis.com/calendar/v3';
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
@@ -68,4 +68,22 @@ function range(view = state.view, a = state.anchor) {
   const first = new Date(a.getFullYear(), a.getMonth(), 1);
   const s = addDays(first, -((first.getDay() - ws + 7) % 7));
   return [s, addDays(s, 42)];
+}
+
+// 通知は開始時刻の何分前かを複数保持する（Googleの上限：5件・4週間前）。
+function validateNotifications(items, limit = 5) {
+  if (!Array.isArray(items) || items.length > limit) throw new Error(`通知は${limit}件まで追加できます`);
+  const seen = new Set();
+  return items.map((item) => {
+    const minutes = Number(item.minutes), method = item.method || 'popup';
+    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 40320 || !['popup', 'email'].includes(method)) throw new Error('通知は開始時刻から4週間前まで、分単位で指定してください');
+    const key = `${method}:${minutes}`;
+    if (seen.has(key)) throw new Error('同じ時刻・方法の通知が重複しています');
+    seen.add(key); return { method, minutes };
+  });
+}
+function eventNotifications(ev) {
+  if (ev.reminders) return ev.reminders.useDefault ? (ev.defaultReminders || []) : (ev.reminders.overrides || []);
+  if (ev.alarms) return ev.alarms.map((minutes) => ({ method: 'popup', minutes }));
+  return ev.remind != null && ev.remind !== '' && ev.remind !== 'default' ? [{ method: 'popup', minutes: Number(ev.remind) }] : [];
 }

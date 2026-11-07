@@ -24,6 +24,7 @@ function localClean(x) {
     title: e.title, location: str(e.location), description: str(e.description), date: e.date, allDay: !!e.allDay,
     start: Number(e.start) || 0, end: Number(e.end) || 0, endDays: Number(e.endDays) || 0, spanDays: Number(e.spanDays) || 1,
     recur: localRule(e.recur), ex: Array.isArray(e.ex) ? e.ex.filter(isDay) : [],
+    notifications: Array.isArray(e.notifications) ? validateNotifications(e.notifications) : undefined,
     remind: typeof e.remind === 'number' && e.remind >= 0 ? e.remind : null,
   }));
   const tasks = x.tasks.filter((t) => t && t.id && typeof t.title === 'string').map((t) => ({
@@ -137,7 +138,7 @@ function localOccurrence(rec, d) {
     diary: false, id: rec.recur ? `${rec.id}|${ymd(d)}` : rec.id, recId: rec.id, occ: ymd(d), calId: rec.calId, title: rec.title,
     location: rec.location, description: rec.description, allDay: rec.allDay, start: startDate, end: endDate,
     color: cal.color, text: cal.text, recurring: !!rec.recur, masterId: rec.recur ? rec.id : null, transparent: false,
-    reminders: { useDefault: false, overrides: rec.remind != null ? [{ method: 'popup', minutes: rec.remind }] : [] },
+    reminders: { useDefault: false, overrides: rec.notifications || (rec.remind != null ? [{ method: 'popup', minutes: rec.remind }] : []) },
   };
 }
 function localBetween(s, e) {
@@ -165,10 +166,10 @@ function localNotifyItems(now = Date.now()) {
   };
   const items = [];
   localBetween(new Date(now), new Date(now + NOTIFY_DAYS * 86400000)).forEach((ev) => {
-    const min = ev.reminders.overrides[0] && ev.reminders.overrides[0].minutes;
-    if (min == null) return;
-    const at = ev.start.getTime() - min * 60000;
-    if (at > now + 1000 && ev.start.getTime() > now) items.push({ id: `${ev.recId}-${ev.occ}`, title: ev.title, body: label(ev), at });
+    ev.reminders.overrides.forEach(({ minutes: min }, index) => {
+      const at = ev.start.getTime() - min * 60000;
+      if (at > now + 1000 && ev.start.getTime() > now) items.push({ id: `${ev.recId}-${ev.occ}-${index}`, title: ev.title, body: label(ev), at });
+    });
   });
   return items.sort((a, b) => a.at - b.at).slice(0, NOTIFY_MAX);
 }
@@ -259,10 +260,12 @@ function localRec(v, id, old) {
     id, calId: v.calId, title: v.title, location: v.location || '', description: v.description != null ? v.description : (old && old.description) || '',
     date: ymd(v.date), allDay: !!v.allDay, start: v.start, end: v.end, endDays: v.endDays || 0, spanDays: v.spanDays || 1,
     recur: localRule(v.recur), ex: [], remind: localRemind(v, old),
+    notifications: v.notificationOverrides !== undefined ? validateNotifications(v.notificationOverrides) : v.remind === 'default' && old ? old.notifications : undefined,
   };
 }
 // 通知は「予定の何分前か」で持つ。「前の日」は、Googleと同じ分数にする
 function localRemind(v, old) {
+  if (v.notificationOverrides !== undefined) return v.notificationOverrides[0]?.minutes ?? null;
   if (v.remind === 'default') return old && old.remind != null ? old.remind : null;
   if (v.remind === 'prevday') return v.allDay ? 15 * 60 : 24 * 60;
   return v.remind ? Number(v.remind) : null;

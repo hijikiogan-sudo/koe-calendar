@@ -26,6 +26,7 @@ for (const allDay of [true, false]) for (const scope of ['this', 'all']) {
         }
       },
     });
+  vm.runInContext(fs.readFileSync(require.resolve('../js/core.js'), 'utf8').slice(fs.readFileSync(require.resolve('../js/core.js'), 'utf8').indexOf('function validateNotifications')), context);
     vm.runInContext(fs.readFileSync(require.resolve('../js/edit.js'), 'utf8'), context);
     const ev = { id: 'event', calId: 'cal', allDay: !allDay, start: date, end: addDays(date, 1), ...(scope === 'all' ? { masterId: 'series' } : {}) };
     context.isFirstOf = () => true;

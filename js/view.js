@@ -46,6 +46,14 @@ function titleHTML() {
   return `${a.getMonth() + 1}月<small>${a.getFullYear()}</small>`;
 }
 
+function eventFlags(ev) {
+  const notifications = !ev.task && eventNotifications(ev).length > 0;
+  const repeating = !!ev.recurring;
+  if (!notifications && !repeating) return '';
+  const label = [notifications ? '通知あり' : '', repeating ? '繰り返しあり' : ''].filter(Boolean).join('・');
+  return `<span class="event-flags" title="${label}" aria-label="${label}">${notifications ? '🔔' : ''}${repeating ? '🔁' : ''}</span>`;
+}
+
 function eventsOn(day) {
   const s = day, e = addDays(day, 1);
   return state.events.filter((ev) => ev.start < e && ev.end > s);
@@ -76,7 +84,7 @@ function renderTimeGrid(n) {
     const cell = el('div', 'ad-cell');
     eventsOn(d).filter((e) => e.allDay).forEach((ev) => {
       const c = el('button', 'chip');
-      c.style.setProperty('--c', ev.color); c.textContent = ev.title;
+      c.style.setProperty('--c', ev.color); c.innerHTML = `${eventFlags(ev)}${esc(ev.title)}`;
       c.onclick = () => openEvent(ev);
       setTip(c, ev);
       cell.appendChild(c);
@@ -110,7 +118,7 @@ function renderTimeGrid(n) {
       const width = n > 1 ? 100 - left : 100 / t.cols;
       b.style.cssText = `top:${top}px;height:${h - 1}px;left:${left}%;width:calc(${width}% - 2px);z-index:${t.col + 1};--c:${t.ev.color}`;
       // 名前は上に出し、長い予定をスクロールしても見えたままにする
-      b.innerHTML = `<div class="ev-grip" aria-hidden="true"></div><div class="ev-in">${n === 1 && h >= 36 ? `<div class="t">${hm(t.ev.start)}〜${hm(t.ev.end)}</div>` : ''}<div class="ev-title">${esc(t.ev.title)}</div>${t.ev.location && h >= 56 ? `<div class="p">${esc(t.ev.location)}</div>` : ''}</div>`;
+      b.innerHTML = `<div class="ev-grip" aria-hidden="true"></div><div class="ev-in">${n === 1 && h >= 36 ? `<div class="t">${hm(t.ev.start)}〜${hm(t.ev.end)}</div>` : ''}<div class="ev-title">${eventFlags(t.ev)}${esc(t.ev.title)}</div>${t.ev.location && h >= 56 ? `<div class="p">${esc(t.ev.location)}</div>` : ''}</div>`;
       b.onclick = () => { if (b.dataset.dragged) { delete b.dataset.dragged; return; } openEvent(t.ev); };
       attachEventDrag(b, t.ev, root);
       setTip(b, t.ev);
@@ -172,7 +180,7 @@ function renderToday() {
   const evRow = (ev, d) => {
     const it = el('button', 'wl-ev' + (!ev.allDay && ev.end <= now && sameDay(d, today) ? ' past' : '') + (!ev.allDay && ev.start <= now && ev.end > now && sameDay(d, today) ? ' now' : ''));
     it.style.setProperty('--c', ev.color);
-    it.innerHTML = `<span class="wl-time">${ev.allDay ? '終日' : sameDay(ev.start, d) ? hm(ev.start) : '続き'}</span><span class="wl-title">${esc(ev.title)}${ev.location ? `<small>${esc(ev.location)}</small>` : ''}</span>`;
+    it.innerHTML = `<span class="wl-time">${ev.allDay ? '終日' : sameDay(ev.start, d) ? hm(ev.start) : '続き'}</span><span class="wl-title"><span class="event-name">${eventFlags(ev)}${esc(ev.title)}</span>${ev.location ? `<small>${esc(ev.location)}</small>` : ''}</span>`;
     it.onclick = () => openEvent(ev);
     setTip(it, ev);
     return it;
@@ -246,7 +254,7 @@ function renderWeekList() {
       const it = el('button', 'wl-ev');
       it.style.setProperty('--c', ev.color);
       const time = ev.allDay ? '終日' : sameDay(ev.start, d) ? hm(ev.start) : '続き';
-      it.innerHTML = `<span class="wl-time">${time}</span><span class="wl-title">${esc(ev.title)}${ev.location ? `<small>${esc(ev.location)}</small>` : ''}</span>`;
+      it.innerHTML = `<span class="wl-time">${time}</span><span class="wl-title"><span class="event-name">${eventFlags(ev)}${esc(ev.title)}</span>${ev.location ? `<small>${esc(ev.location)}</small>` : ''}</span>`;
       it.onclick = () => openEvent(ev);
       setTip(it, ev);
       items.appendChild(it);
@@ -490,7 +498,7 @@ function fillMonthCell(cell, evs, d, body, s) {
   const lines = evs.slice(0, evs.length > max ? max - 1 : max).map((ev) => {
     const x = el('div', 'm-ev ' + (ev.task ? 'task' : ev.allDay ? 'allday' : 'timed'));
     if (!ev.task) { x.style.setProperty('--c', ev.color); x.style.setProperty('--ct', ev.text || '#fff'); }
-    x.textContent = ev.title;
+    x.innerHTML = `${eventFlags(ev)}<span class="m-title">${esc(ev.title)}</span>`;
     setTip(x, ev);
     cell.appendChild(x);
     if (!ev.task) attachMonthDrag(x, ev, d, cell, body, s);
@@ -641,7 +649,7 @@ function openDayPop(d, cell) {
     <div class="dp-head"><button class="dp-close">閉じる</button><b>${wareki(d)}</b><span>${WD[d.getDay()]}曜日</span></div>
     <button class="dp-memo">${MEMO_MARK} ${state.diary.has(ymd(d)) ? esc(state.diary.get(ymd(d)).description || '') : 'メモを書く'}</button>
     <ul class="dp-list">${evs.map((ev, i) => `<li data-e="${i}"><span class="dp-time">${ev.allDay ? '終日' : hm(ev.start)}</span>
-      <span class="dp-title" style="--c:${ev.color}">${esc(ev.title)}${ev.location ? `<small>${esc(ev.location)}</small>` : ''}</span></li>`).join('')}
+      <span class="dp-title" style="--c:${ev.color}"><span class="event-name">${eventFlags(ev)}${esc(ev.title)}</span>${ev.location ? `<small>${esc(ev.location)}</small>` : ''}</span></li>`).join('')}
       ${tks.map((t, i) => `<li data-t="${i}"><span class="dp-time">タスク</span><span class="dp-title dp-task">☐ ${esc(t.title)}</span></li>`).join('')}
       ${!evs.length && !tks.length ? '<li class="dp-empty">予定はありません</li>' : ''}</ul>
     <div class="dp-acts"><button class="dp-add">＋ この日に登録</button><button class="dp-day">1日表示で見る</button></div>`;
