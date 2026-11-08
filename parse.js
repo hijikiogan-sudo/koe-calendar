@@ -25,6 +25,9 @@
       // 単位の前の漢数字だけを数字にする（「一郎」「三河」などの名前は変えない）
       .replace(/[〇零一二三四五六七八九十百]+(?=\s*(?:年|月|日|時|分|階|号|番|週|件|回|名|人|F))/g, kanjiToNum)
       .replace(/(\d)\s*時\s*半/g, '$1時30分')
+      // 明示的な時刻・日付の言い直しだけを適用する。人名や予定名は推測で置換しない。
+      .replace(/((?:午前|午後)?[０-９0-9]{1,2}(?:[：:][０-９0-9]{2}|時(?:[０-９0-9]{1,2}分|半)?))[、,\s]*(?:いや|じゃなくて|ではなくて|ではなく)[、,\s]*((?:午前|午後)?[０-９0-9]{1,2}(?:[：:][０-９0-9]{2}|時(?:[０-９0-9]{1,2}分|半)?))/g, (_, before, after) => /^(?:午前|午後)/.test(after) ? after : ((before.match(/^(午前|午後)/) || [])[1] || '') + after)
+      .replace(/(今日|明日|明後日|あさって|明々後日)[、,\s]*(?:いや|じゃなくて|ではなくて|ではなく)[、,\s]*(今日|明日|明後日|あさって|明々後日)/g, '$2')
       // 時間帯の言葉を日付＋時間帯に分ける
       .replace(/今夜|今晩/g, '今日の夜 ').replace(/今朝/g, '今日の朝 ').replace(/明晩/g, '明日の夜 ').replace(/明朝/g, '明日の朝 ')
       .replace(/正午/g, '12時')
@@ -56,12 +59,26 @@
   // 「アラームを設定してください」だけなら、予定の時刻ちょうどに鳴らす。時間の指定があれば、そちらを優先する
   const REMIND_ONLY = new RegExp(`(?:その)?(?:${REMIND_WORD})+(?:機能)?(?:を|は)?\\s*(?:設定して|セットして|かけて|鳴らして|入れて|つけて|付けて)(?:ください|ほしい)?`, 'g');
   function parseRemind(st) {
-    const r = parseRemindTime(st);
+    const reminders = [];
+    // 「30分前と10分前に通知」のようなまとめ指定を、予定名に残さず読む。
+    const token = '\\d+\\s*(?:分|時間|日|週間)\\s*前';
+    const list = `(${token}(?:\\s*(?:と|、|,|および)\\s*${token})+)`;
+    const grouped = take(st, new RegExp(`${list}(?:に|の|で)?\\s*${REMIND_WORD}${REMIND_TAIL}`))
+      || take(st, new RegExp(`${REMIND_WORD}(?:機能)?(?:は|を)?\\s*${list}${REMIND_TAIL}`));
+    if (grouped) {
+      for (const m of grouped[1].matchAll(/(\d+)\s*(分|時間|日|週間)\s*前/g)) {
+        reminders.push({ minutes: Number(m[1]) * { 分: 1, 時間: 60, 日: 1440, 週間: 10080 }[m[2]], label: `${m[1]}${m[2]}前` });
+      }
+    }
+    for (let r; (r = parseRemindTime(st));) reminders.push(r);
     const had = REMIND_ONLY.test(st.s);
     REMIND_ONLY.lastIndex = 0;
     st.s = st.s.replace(REMIND_ONLY, ' ').trim();
-    return r || (had ? { minutes: 0, label: '予定の時刻' } : null);
+    const unique = reminders.filter((r, i) => reminders.findIndex((x) => x.minutes === r.minutes) === i);
+    if (unique.length > 1) return { ...unique[0], label: unique.map((r) => r.label).join('・'), items: unique };
+    return unique[0] || (had ? { minutes: 0, label: '予定の時刻' } : null);
   }
+
   function parseRemindTime(st) {
     let m = take(st, new RegExp(`(\\d+)\\s*(分|時間|日)\\s*前(?:に|の|で)?\\s*${REMIND_WORD}${REMIND_TAIL}`));
     if (m) {

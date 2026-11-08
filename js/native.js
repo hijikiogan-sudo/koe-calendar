@@ -10,16 +10,20 @@ if (NATIVE) {
   window.SpeechRecognition = class {
     start() {
       this.ended = false;
+      this.session = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       this.subs = [
-        KoeSpeech.addListener('result', ({ text, isFinal }) => {
-          if (this.onresult) this.onresult({ results: [Object.assign([{ transcript: text }], { isFinal })] });
+        KoeSpeech.addListener('result', ({ text, isFinal, session }) => {
+          if (session && session !== this.session) return;
+          if (!this.ended && this.onresult) this.onresult({ results: [Object.assign([{ transcript: text }], { isFinal })] });
         }),
-        KoeSpeech.addListener('end', ({ error } = {}) => {
+        KoeSpeech.addListener('activity', (data) => { if (data.session && data.session !== this.session) return; if (!this.ended && this.onactivity) this.onactivity(data); }),
+        KoeSpeech.addListener('end', ({ error, session } = {}) => {
+          if (session && session !== this.session) return;
           if (error && this.onerror) this.onerror({ error });
           this.finish();
         }),
       ];
-      KoeSpeech.start({ lang: this.lang, hints: speechHints() }).catch((err) => {
+      KoeSpeech.start({ lang: this.lang, session: this.session, hints: speechHints() }).catch((err) => {
         if (this.onerror) this.onerror({ error: err.code || 'network' });
         this.finish();
       });
@@ -38,9 +42,12 @@ if (NATIVE) {
 // 辞書の言葉とよく使う予定名を、聞き取りのヒントとして渡す
 function speechHints() {
   try {
-    const dict = getDict().map((d) => d.to || d.value || '').filter(Boolean);
-    const often = ['titles', 'locs'].flatMap((k) => Object.entries(getCorpus(k, true)).sort((a, b) => b[1] - a[1]).slice(0, 30).map(([t]) => t));
-    return [...new Set([...dict, ...often])].filter((t) => [...t].length <= 20).slice(0, 100);
+    const clean = (values) => [...new Set(values.map((t) => String(t).trim()).filter((t) => t && [...t].length <= 60))];
+    const dict = clean(getDict().map((d) => d.to || d.value || '').filter(Boolean));
+    const ranked = (kind) => clean(Object.entries(getCorpus(kind, true)).sort((a, b) => b[1] - a[1]).map(([t]) => t));
+    const titles = ranked('titles'), places = ranked('locs');
+    // 辞書が多い場合も予定名と施設名の枠を確保し、余りを順に補充する。
+    return clean([...dict.slice(0, 40), ...titles.slice(0, 30), ...places.slice(0, 30), ...dict, ...titles, ...places]).slice(0, 100);
   } catch (err) { console.warn(err); return []; }
 }
 

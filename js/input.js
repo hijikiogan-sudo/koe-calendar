@@ -6,6 +6,7 @@ const VOICE_ERR = {
   'not-allowed': NATIVE ? 'マイクか音声認識が許可されていません。設定アプリのKoeで許可してください' : 'マイクの使用が許可されていません。ブラウザの設定で許可してください',
   'service-not-allowed': 'このブラウザでは音声認識が使えません。文字で入力してください',
   'audio-capture': 'マイクが見つかりません',
+  'recognition-failed': '音声認識を続けられませんでした。もう一度録音するか、文字で入力してください',
   'network': '音声認識につながりませんでした。通信を確認してください',
 };
 
@@ -28,18 +29,24 @@ function setHeard(text) {
 function listen(SR = window.SpeechRecognition || window.webkitSpeechRecognition) {
   voice.heard = voice.final = voice.error = '';
   setHeard('');
-  $('#v-hint').textContent = '聞き取り中…話し終えて2秒ほど待つと確認画面へ';
+  const pause = [3000, 5000, 8000, 0].includes(Number(cfg('speechPause', 3000))) ? Number(cfg('speechPause', 3000)) : 3000;
+  $('#v-hint').textContent = pause ? `聞き取り中…話し終えて約${pause / 1000}秒待つと確認画面へ` : '聞き取り中…話し終えたら停止ボタンを押してください';
   $('#voice').classList.add('on');
   const rec = new SR();
   rec.lang = 'ja-JP';
   rec.interimResults = true;
-  rec.continuous = true; // 項目の間で少し黙っても止まらない。2秒黙ったらこちらで止める
+  rec.continuous = true; // Web版では発話の間で止めず、選択した待ち時間で停止する
   rec.maxAlternatives = 1;
   const stopLater = () => {
     clearTimeout(voice.silence);
-    voice.silence = setTimeout(() => { if (voice.rec === rec) rec.stop(); }, 2000);
+    if (pause) voice.silence = setTimeout(() => { if (voice.rec === rec) rec.stop(); }, pause);
+  };
+  rec.onactivity = ({ speaking }) => {
+    if (voice.rec !== rec) return;
+    if (speaking && voice.heard) stopLater();
   };
   rec.onresult = (e) => {
+    if (voice.rec !== rec) return;
     // iPhoneは結果を累積して返すことがあるので、同じ内容を二重に足さない
     const join = (acc, t) => (t.startsWith(acc) ? t : acc.startsWith(t) ? acc : acc + t);
     let fin = '', all = '';
@@ -52,8 +59,9 @@ function listen(SR = window.SpeechRecognition || window.webkitSpeechRecognition)
     setHeard(all);
     stopLater();
   };
-  rec.onerror = (e) => { voice.error = e.error; };
+  rec.onerror = (e) => { if (voice.rec === rec) voice.error = e.error; };
   rec.onend = () => {
+    if (voice.rec !== rec) return;
     clearTimeout(voice.silence);
     $('#voice').classList.remove('on');
     voice.rec = null;

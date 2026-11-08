@@ -138,7 +138,12 @@ function openEdit(ev, text, scope = 'this', moved, master) {
       v.allDay = false; v.start = c.start; v.end = endAbs % 1440; v.endDays = Math.floor(endAbs / 1440);
       changed.add('time');
     }
-    if (c.remind) { delete v.notificationOverrides; v.remind = String(c.remind.minutes); v.remindLabel = c.remind.label; changed.add('remind'); }
+    if (c.remind) {
+      delete v.notificationOverrides;
+      v.remind = String(c.remind.minutes); v.remindLabel = c.remind.label;
+      if (c.remind.items) v.notificationOverrides = c.remind.items.map((r) => ({ method: 'popup', minutes: r.minutes === 'prevday' ? (v.allDay ? 900 : 1440) : r.minutes }));
+      changed.add('remind');
+    }
   }
   openForm(v, {
     heading: ev.recurring ? `変更しますか？（${SCOPE_LABEL[scope]}）` : 'この内容に変更しますか？', heard: text, busyLabel: '変更中…', okLabel: '変更する', changed, keepRemind: true, fixedKind: true,

@@ -527,6 +527,7 @@ function openConfirm(text, slot, raw) {
     kind: asEvent ? 'event' : p.kind, calId: p.calId, title: p.title, date: p.date || startOfDay(new Date()), noDue: p.kind === 'task' && !p.dateSaid && !slot && !asEvent,
     allDay: asEvent ? true : p.allDay, start: p.start != null ? p.start : asEvent ? 540 : p.start, end: p.end != null ? p.end : asEvent ? 600 : p.end,
     location: p.location, remind: p.remind ? String(p.remind.minutes) : cfg('defRemind', ''), remindLabel: p.remind && p.remind.label,
+    notificationOverrides: p.remind?.items?.map((r) => ({ method: 'popup', minutes: r.minutes === 'prevday' ? (p.allDay || asEvent ? 900 : 1440) : r.minutes })),
     spanDays: p.spanDays, endDays: p.endDays, recur: p.recur,
     listId: (p.calSaid && state.taskLists.find((l) => { const c = cals.find((x) => x.id === p.calId); return c && (c.name.includes(l.title) || l.title.includes(c.name)); }) || {}).id,
   }, {

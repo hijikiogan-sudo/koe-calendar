@@ -219,6 +219,11 @@ public class KoeSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "abort", returnType: CAPPluginReturnPromise),
     ]
 
+    private let audioQueue = DispatchQueue(label: "jp.hijikiogan.koe.speech")
+    private var sessionID = UUID()
+    private var authorizationID = UUID()
+    private var stopping = false
+    private var clientSession = ""
     private let engine = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
@@ -229,18 +234,26 @@ public class KoeSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func start(_ call: CAPPluginCall) {
         let lang = call.getString("lang") ?? "ja-JP"
         let hints = call.getArray("hints", String.self) ?? []
-        SFSpeechRecognizer.requestAuthorization { status in
-            guard status == .authorized else {
-                call.reject("音声認識が許可されていません", "not-allowed")
-                return
-            }
-            AVAudioSession.sharedInstance().requestRecordPermission { granted in
-                DispatchQueue.main.async {
-                    guard granted else {
-                        call.reject("マイクが許可されていません", "not-allowed")
-                        return
+        let attempt = UUID()
+        audioQueue.async {
+            self.authorizationID = attempt
+            SFSpeechRecognizer.requestAuthorization { status in
+                guard status == .authorized else {
+                    call.reject("音声認識が許可されていません", "not-allowed")
+                    return
+                }
+                AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                    self.audioQueue.async {
+                        guard self.authorizationID == attempt else {
+                            call.reject("録音を取り消しました", "aborted")
+                            return
+                        }
+                        guard granted else {
+                            call.reject("マイクが許可されていません", "not-allowed")
+                            return
+                        }
+                        self.begin(lang: lang, hints: hints, call: call)
                     }
-                    self.begin(lang: lang, hints: hints, call: call)
                 }
             }
         }
@@ -248,6 +261,9 @@ public class KoeSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func begin(lang: String, hints: [String], call: CAPPluginCall) {
         finish(cancel: true)
+        let id = UUID()
+        sessionID = id
+        clientSession = call.getString("session") ?? ""
         guard let rec = SFSpeechRecognizer(locale: Locale(identifier: lang)), rec.isAvailable else {
             call.reject("音声認識につながりませんでした", "network")
             return
@@ -255,14 +271,16 @@ public class KoeSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         do {
             let audio = AVAudioSession.sharedInstance()
             try audio.setCategory(.record, mode: .measurement, options: .duckOthers)
-            try audio.setActive(true, options: .notifyOthersOnDeactivation)
+            try audio.setActive(true)
         } catch {
+            finish(cancel: true)
             call.reject("マイクが使えません", "audio-capture")
             return
         }
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
+            finish(cancel: true)
             call.reject("マイクが見つかりません", "audio-capture")
             return
         }
@@ -275,15 +293,34 @@ public class KoeSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         recognizer = rec
         request = req
         running = true
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in req.append(buffer) }
+        // 実際のマイク音量を使う。認識文字の更新間隔を「無音」と取り違えない。
+        var elapsedFrames: AVAudioFrameCount = 0
+        var peakLevel: Float = 0
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+            req.append(buffer)
+            guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return }
+            var energy: Float = 0
+            for i in 0..<Int(buffer.frameLength) { energy += samples[i] * samples[i] }
+            peakLevel = max(peakLevel, sqrt(energy / Float(buffer.frameLength)))
+            elapsedFrames += buffer.frameLength
+            guard elapsedFrames >= AVAudioFrameCount(format.sampleRate * 0.1) else { return }
+            let speaking = peakLevel >= 0.01
+            peakLevel = 0
+            elapsedFrames = 0
+            self?.audioQueue.async { [weak self] in
+                guard let self, self.running, self.sessionID == id, !self.stopping else { return }
+                self.notifyListeners("activity", data: ["speaking": speaking, "session": self.clientSession])
+            }
+        }
         tapInstalled = true
         task = rec.recognitionTask(with: req) { [weak self] result, error in
-            DispatchQueue.main.async {
-                guard let self, self.running else { return }
+            self?.audioQueue.async {
+                guard let self, self.running, self.sessionID == id else { return }
                 if let result {
                     self.notifyListeners("result", data: [
                         "text": result.bestTranscription.formattedString,
                         "isFinal": result.isFinal,
+                        "session": self.clientSession,
                     ])
                     if result.isFinal { self.end(error: nil); return }
                 }
@@ -305,17 +342,22 @@ public class KoeSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         // 1110：何も聞こえなかった
         if e.domain == "kAFAssistantErrorDomain", e.code == 1110 { return "no-speech" }
         if e.domain == NSURLErrorDomain { return "network" }
-        return "no-speech"
+        return "recognition-failed"
     }
 
     private func end(error: String?) {
         guard running else { return }
+        let client = clientSession
         finish(cancel: false)
-        notifyListeners("end", data: error.map { ["error": $0] } ?? [:])
+        var data: JSObject = ["session": client]
+        if let error = error { data["error"] = error }
+        notifyListeners("end", data: data)
     }
 
     private func finish(cancel: Bool) {
         running = false
+        stopping = false
+        sessionID = UUID()
         if engine.isRunning { engine.stop() }
         if tapInstalled { engine.inputNode.removeTap(onBus: 0); tapInstalled = false }
         request?.endAudio()
@@ -327,19 +369,25 @@ public class KoeSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
 
     /// 話し終わり。ここまでの結果を確定して終わる
     @objc func stop(_ call: CAPPluginCall) {
-        DispatchQueue.main.async {
-            guard self.running else { call.resolve(); return }
+        audioQueue.async {
+            guard self.running, !self.stopping else { call.resolve(); return }
+            self.stopping = true
+            let id = self.sessionID
             if self.engine.isRunning { self.engine.stop() }
             if self.tapInstalled { self.engine.inputNode.removeTap(onBus: 0); self.tapInstalled = false }
             self.request?.endAudio()
             call.resolve()
             // 確定の結果が届かないときも、聞き取りを終わらせる
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.end(error: nil) }
+            self.audioQueue.asyncAfter(deadline: .now() + 4) {
+                guard self.sessionID == id else { return }
+                self.end(error: nil)
+            }
         }
     }
 
     @objc func abort(_ call: CAPPluginCall) {
-        DispatchQueue.main.async {
+        audioQueue.async {
+            self.authorizationID = UUID()
             self.finish(cancel: true)
             call.resolve()
         }

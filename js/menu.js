@@ -220,6 +220,7 @@ function openMenu() {
     ${group('input', '入力の標準', `
       ${wcals.length ? row('標準のカレンダー', sel('defCal', '', [['', '自動（自分用）'], ...wcals])) : ''}
       ${lists.length > 1 ? row('標準のToDoリスト', sel('defList', '', [['', '自動（先頭のリスト）'], ...lists])) : ''}
+      ${row('音声入力の待ち時間', sel('speechPause', 3000, [[3000, '3秒'], [5000, '5秒'], [8000, '8秒'], [0, '自動停止しない']]))}
       ${row('標準の通知', sel('defRemind', '', REMINDS.map((r) => [r.v, r.label])))}
       ${wcals.length ? row('メモのカレンダー', sel('memoCal', '', [['', '自動（自分用）'], ...wcals])) : ''}
       ${row('時刻のない文', sel('noTimeKind', 'task', [['task', 'タスクにする'], ['event', '終日の予定にする']]))}
@@ -256,7 +257,7 @@ function openMenu() {
   sh.querySelectorAll('select.cfg').forEach((x) => x.onchange = () => {
     const k = x.dataset.k;
     if (state.offGoogle && APPLE_KEEP.includes(k)) { toast('この表示では、この設定は保存しません'); return; }
-    const v = ['weekStart', 'monthMax', 'hourH'].includes(k) ? Number(x.value) : ['rokuyo', 'todayCountdown'].includes(k) ? x.value === 'true' : x.value;
+    const v = ['weekStart', 'monthMax', 'hourH', 'speechPause'].includes(k) ? Number(x.value) : ['rokuyo', 'todayCountdown'].includes(k) ? x.value === 'true' : x.value;
     setCfg(k, v);
     if (k === 'textSize' || k === 'hourH') applyTheme();
     if (['weekStart', 'monthMax', 'startHour', 'hourH', 'weekStyle', 'rokuyo', 'todayCountdown'].includes(k)) { state.scrollTop = null; load(); }
