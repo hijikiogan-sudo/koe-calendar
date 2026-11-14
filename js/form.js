@@ -192,7 +192,16 @@ function openForm(v, opt) {
     const to = new Date(d); to.setMinutes(endMin);
     const key = `${ymd(d)}|${diff}`;
     if (!dayCache.has(key)) dayCache.set(key, eventsBetween(d, addDays(d, diff + 2)));
-    const list = await dayCache.get(key);
+    let list;
+    try { list = await dayCache.get(key); }
+    catch {
+      dayCache.delete(key); // 失敗したPromiseを残すと同じ日の再確認ができなくなる。
+      if (id === conflictSeq && $('#c-conflict')) {
+        box.hidden = false;
+        box.textContent = '予定の重複を確認できませんでした。通信状況を確認してください。';
+      }
+      return;
+    }
     if (id !== conflictSeq || !$('#c-conflict')) return;
     const hit = list.filter((e) => !e.allDay && !e.transparent && e.start < to && e.end > from && !(opt.notConflict && opt.notConflict(e)));
     box.hidden = !hit.length;
@@ -275,6 +284,7 @@ function openForm(v, opt) {
     const a = parseYMD($('#c-date').value), o = parseYMD(prevDate), e = parseYMD($('#c-enddate').value);
     if (!isNaN(a) && !isNaN(o) && !isNaN(e)) $('#c-enddate').value = ymd(addDays(e, Math.round((a - o) / 86400000)));
     prevDate = $('#c-date').value;
+    checkConflict();
   });
   $('#c-nodue').onchange = (e) => { $('#c-date').disabled = e.target.checked; };
   $('#c-allday').onchange = (e) => { $('#c-start').disabled = $('#c-end').disabled = e.target.checked; };

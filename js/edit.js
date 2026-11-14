@@ -178,7 +178,7 @@ function eventBody(v) {
   } else if (v.remind !== 'default') {
     // 設計書：通知は言ったときだけ。基本は通知なし
     const min = v.remind === 'prevday' ? (v.allDay ? 15 * 60 : 24 * 60) : v.remind ? Number(v.remind) : null;
-    body.reminders = { useDefault: false, overrides: min != null ? [{ method: 'popup', minutes: min }] : [] };
+    body.reminders = { useDefault: false, overrides: validateNotifications(min != null ? [{ method: 'popup', minutes: min }] : []) };
   }
   if (v.description !== undefined) body.description = v.description;
   if (v.recur) { const rule = window.KoeParse.recurRule(v.recur, v.date, v.allDay); if (rule) body.recurrence = [rule]; }

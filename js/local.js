@@ -165,10 +165,12 @@ function localNotifyItems(now = Date.now()) {
     return `${day}${time}${ev.location ? ` ${ev.location}` : ''}`;
   };
   const items = [];
-  localBetween(new Date(now), new Date(now + NOTIFY_DAYS * 86400000)).forEach((ev) => {
+  const until = now + NOTIFY_DAYS * 86400000;
+  // 4週間前の通知は、予定そのものが60日より先でも予約期間内に入る。
+  localBetween(new Date(now), new Date(until + 28 * 86400000)).forEach((ev) => {
     ev.reminders.overrides.forEach(({ minutes: min }, index) => {
       const at = ev.start.getTime() - min * 60000;
-      if (at > now + 1000 && ev.start.getTime() > now) items.push({ id: `${ev.recId}-${ev.occ}-${index}`, title: ev.title, body: label(ev), at });
+      if (at > now + 1000 && at <= until && ev.start.getTime() > now) items.push({ id: `${ev.recId}-${ev.occ}-${index}`, title: ev.title, body: label(ev), at });
     });
   });
   return items.sort((a, b) => a.at - b.at).slice(0, NOTIFY_MAX);
@@ -256,11 +258,13 @@ async function searchLocal(word) {
 
 // ---------- 予定の書き込み ----------
 function localRec(v, id, old) {
+  const remind = localRemind(v, old);
+  const notifications = v.notificationOverrides !== undefined ? validateNotifications(v.notificationOverrides) : v.remind === 'default' && old ? old.notifications : undefined;
+  if (notifications === undefined && remind != null) validateNotifications([{ method: 'popup', minutes: remind }]);
   return {
     id, calId: v.calId, title: v.title, location: v.location || '', description: v.description != null ? v.description : (old && old.description) || '',
     date: ymd(v.date), allDay: !!v.allDay, start: v.start, end: v.end, endDays: v.endDays || 0, spanDays: v.spanDays || 1,
-    recur: localRule(v.recur), ex: [], remind: localRemind(v, old),
-    notifications: v.notificationOverrides !== undefined ? validateNotifications(v.notificationOverrides) : v.remind === 'default' && old ? old.notifications : undefined,
+    recur: localRule(v.recur), ex: [], remind, notifications,
   };
 }
 // 通知は「予定の何分前か」で持つ。「前の日」は、Googleと同じ分数にする

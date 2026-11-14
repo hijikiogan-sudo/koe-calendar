@@ -85,3 +85,13 @@ test('通知と繰り返しのアイコンをそれぞれ表示する', () => {
   const html=c.eventFlags({reminders:{useDefault:false,overrides:[{minutes:10}]},recurring:true});
   assert.match(html,/🔔🔁/);assert.match(html,/通知あり・繰り返しあり/);
 });
+test('予定が70日先でも28日前の通知を予約し、60日より先の通知は入れない', () => {
+  const { context: c }=setup();const now=Date.now(),day=86400000;let searchedUntil;
+  c.localBetween=(_,until)=>{searchedUntil=until.getTime();return [{recId:'far',occ:'2027-01-01',title:'先の予定',start:new Date(now+70*day),reminders:{overrides:[{minutes:28*1440},{minutes:10}]}}].filter(e=>e.start.getTime()<searchedUntil)};
+  const items=c.localNotifyItems(now);assert.equal(items.length,1);assert.equal(items[0].at,now+42*day);assert.equal(searchedUntil,now+88*day);
+});
+test('音声から来た単一通知も範囲外ならGoogle送信・ローカル保存前に拒否する',()=>{
+  const { context:c }=setup();const v={title:'会議',calId:'me',date:new Date(2026,10,14),start:840,end:900,remind:'40321'};
+  assert.throws(()=>c.eventBody(v),/4週間前/);assert.throws(()=>c.localRec(v,'e'),/4週間前/);
+  v.remind='40320';assert.equal(c.eventBody(v).body.reminders.overrides[0].minutes,40320);
+});

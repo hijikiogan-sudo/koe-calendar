@@ -251,12 +251,14 @@ const forceDemo = new URLSearchParams(location.search).has('demo');
 if (NATIVE) prepareNativeLogin();
 // Koeだけの使い方をやめたら、見られなくなった予定の通知を鳴らさない
 if (NATIVE && !isLocalView()) KoeLocal.notifySchedule({ items: [] }).catch(() => {});
-if (forceDemo || !cfgClientId()) {
+if (forceDemo) {
   startDemo();
 } else if (isLocalView()) {
   startLocal();
 } else if (isAppleView()) {
   startApple();
+} else if (!cfgClientId()) {
+  if (NATIVE) showLogin(); else startDemo();
 } else if (NATIVE) {
   startNative();
 } else {
